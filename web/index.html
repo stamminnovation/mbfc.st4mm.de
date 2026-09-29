@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111417">
+  <meta name="description" content="R.I.P. - RAPT Remote Fermentation Dashboard">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+  <title>R.I.P. Remote</title>
+</head>
+<body class="auth-locked">
+  <section id="auth-screen" class="auth-screen" aria-labelledby="auth-title">
+    <form id="auth-form" class="auth-card" autocomplete="off">
+      <div class="eyebrow">R.I.P. - RAPT</div>
+      <h1 id="auth-title">Remote Fermentation</h1>
+      <p class="auth-copy">Geschützter Zugriff auf die Remote-Bedienoberfläche.</p>
+      <label>Kennwort<input id="auth-password" type="password" autocomplete="current-password" required autofocus></label>
+      <div id="auth-error" class="auth-error hidden" role="alert"></div>
+      <button type="submit" class="full">Anmelden</button>
+      <p class="hint">Die Anmeldung gilt nur für diesen Browser-Tab. Der MQTT-Broker benötigt zusätzlich eigene Zugangsdaten.</p>
+    </form>
+  </section>
+
+  <main class="shell">
+    <header class="topbar">
+      <div><div class="eyebrow">R.I.P. - RAPT</div><h1>Remote Fermentation</h1></div>
+      <div class="top-actions">
+        <span id="broker-pill" class="pill bad">Broker offline</span>
+        <button id="open-settings" class="secondary">⚙ Verbindung</button>
+        <button id="logout" class="ghost">Abmelden</button>
+      </div>
+    </header>
+
+    <div id="error-notice" class="notice error hidden"></div>
+    <div id="alarm-notice" class="notice alarm hidden">
+      <strong>Alarm aktiv</strong><span id="alarm-text"></span><button id="ack-alarm">Quittieren</button>
+    </div>
+
+    <nav id="device-tabs" class="device-tabs"></nav>
+
+    <section class="hero-grid">
+      <article class="card hero-card">
+        <div class="card-head"><span>Prozesstemperatur</span><span id="availability" class="status-dot offline">UNKNOWN</span></div>
+        <div id="temperature" class="temperature">—</div>
+        <div id="setpoint" class="setpoint">Sollwert —</div>
+        <div class="actuator-row">
+          <span id="heat" class="actuator">HEAT</span>
+          <span id="cool" class="actuator">COOL</span>
+          <span id="output">Output —</span>
+        </div>
+      </article>
+      <article class="card stats-card">
+        <div><span>Modus</span><strong id="mode">—</strong></div>
+        <div><span>Regler</span><strong id="regulation">—</strong></div>
+        <div><span>Dichte</span><strong id="density">—</strong></div>
+        <div><span>Δ / Tag</span><strong id="density-change">—</strong></div>
+      </article>
+    </section>
+
+    <section class="content-grid">
+      <article class="card">
+        <div class="card-head"><h2>Verlauf</h2><div class="legend"><span class="temp-key">Temperatur</span><span class="sp-key">Sollwert</span></div></div>
+        <svg id="chart" class="chart" viewBox="0 0 900 260" role="img" aria-label="Temperaturverlauf"></svg>
+        <p class="hint">Browserlokaler Kurzzeitverlauf, maximal 360 Messpunkte pro Fermenter.</p>
+      </article>
+
+      <article class="card">
+        <h2>Profil</h2>
+        <div id="profile-name" class="profile-name">Kein Profil gewählt</div>
+        <div class="profile-progress"><span id="profile-step">Schritt 0 / 0</span><span id="profile-remaining">—</span></div>
+        <div id="profile-flags" class="profile-flags"></div>
+        <label>Profil auswählen<select id="profile-select"><option value="">Profil wählen</option></select></label>
+        <div class="button-row"><button id="profile-start">Profil starten</button><button id="profile-stop" class="secondary">Stop</button></div>
+      </article>
+    </section>
+
+    <section class="content-grid controls-grid">
+      <article class="card">
+        <h2>Steuerung</h2>
+        <div class="form-grid control-form">
+          <label>Solltemperatur °C<input id="setpoint-input" type="number" step="0.1"></label>
+          <div class="align-end"><button id="setpoint-send">Sollwert setzen</button></div>
+        </div>
+        <div class="mode-buttons"><button data-mode="idle">IDLE</button><button data-mode="temp">TEMP</button><button data-mode="profile">PROFILE</button></div>
+        <button id="status-request" class="ghost full">Status neu anfordern</button>
+      </article>
+
+      <article class="card">
+        <h2>Netzwerk & Firmware</h2>
+        <dl class="details">
+          <div><dt>Hostname</dt><dd id="hostname">—</dd></div>
+          <div><dt>IP</dt><dd id="ip">—</dd></div>
+          <div><dt>RSSI</dt><dd id="rssi">—</dd></div>
+          <div><dt>MAC</dt><dd id="mac">—</dd></div>
+          <div><dt>Firmware</dt><dd id="firmware">—</dd></div>
+          <div><dt>Letzte Nachricht</dt><dd id="last-message">—</dd></div>
+        </dl>
+        <details><summary>Letzte MQTT-Quittierung</summary><pre id="last-ack">—</pre></details>
+      </article>
+    </section>
+    <footer>R.I.P. Remote · statische WebApp · MQTT over WebSockets</footer>
+  </main>
+
+  <div id="settings-modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-head"><h2>Verbindung konfigurieren</h2><button id="close-settings" class="icon-button">×</button></div>
+      <label>MQTT WebSocket URL<input id="broker-url" placeholder="wss://mqtt.example.com:8084/mqtt"></label>
+      <div class="form-grid">
+        <label>Benutzername<input id="broker-user" autocomplete="username"></label>
+        <label>Passwort<input id="broker-password" type="password" autocomplete="current-password"></label>
+      </div>
+      <p class="hint">Die Zugangsdaten werden nur in diesem Browser gespeichert. Für produktiven Betrieb einen eigenen MQTT-Benutzer mit engen ACLs verwenden.</p>
+      <h3>Fermenter</h3>
+      <div id="device-editor-list"></div>
+      <button id="add-device" class="secondary">+ Fermenter hinzufügen</button>
+      <div class="modal-actions"><button id="reset-config" class="ghost danger">Lokale Konfiguration löschen</button><button id="save-settings">Speichern & verbinden</button></div>
+    </div>
+  </div>
+
+  <script src="./auth-config.js"></script>
+  <script src="./auth.js"></script>
+</body>
+</html>
