@@ -70,6 +70,13 @@
         <h2>Profil</h2>
         <div id="profile-name" class="profile-name">Kein Profil gewählt</div>
         <div class="profile-progress"><span id="profile-step">Schritt 0 / 0</span><span id="profile-remaining">—</span></div>
+        <div id="profile-progress-panel" class="profile-progress-panel hidden">
+          <div class="profile-progress-head"><span>Profilfortschritt</span><strong id="profile-progress-value">0,0 %</strong></div>
+          <div class="profile-progress-track" role="progressbar" aria-label="Profilfortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div id="profile-progress-bar" class="profile-progress-bar"></div>
+          </div>
+          <div id="profile-progress-note" class="profile-progress-note"></div>
+        </div>
         <div id="profile-flags" class="profile-flags"></div>
         <label>Profil auswählen<select id="profile-select"><option value="">Profil wählen</option></select></label>
         <div class="button-row"><button id="profile-start">Profil starten</button><button id="profile-stop" class="secondary">Stop</button></div>
