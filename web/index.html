@@ -112,6 +112,11 @@
         <label>Passwort<input id="broker-password" type="password" autocomplete="current-password"></label>
       </div>
       <p class="hint">Die Zugangsdaten werden nur in diesem Browser gespeichert. Für produktiven Betrieb einen eigenen MQTT-Benutzer mit engen ACLs verwenden.</p>
+      <div class="button-row">
+        <button id="import-credentials" class="secondary" type="button">Credentials importieren</button>
+        <input id="credentials-file" class="hidden" type="file" accept=".json,application/json">
+      </div>
+      <p id="credentials-import-status" class="hint hidden" role="status"></p>
       <h3>Fermenter</h3>
       <div id="device-editor-list"></div>
       <button id="add-device" class="secondary">+ Fermenter hinzufügen</button>
