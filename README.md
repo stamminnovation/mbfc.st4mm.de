@@ -58,6 +58,38 @@ topic read riprapt/+/out/#
 topic write riprapt/+/in
 ```
 
+## Credentials-Import
+
+Unter **Verbindung → Credentials importieren** kann eine lokale JSON-Datei eingelesen werden. Die Datei wird ausschließlich im Browser gelesen und nicht auf GitHub oder einen anderen Server hochgeladen.
+
+Format Version 1:
+
+```json
+{
+  "format": "riprapt-remote-credentials",
+  "version": 1,
+  "broker": {
+    "url": "wss://mqtt.example.com/mqtt",
+    "username": "riprapt-web",
+    "password": "CHANGE_ME"
+  },
+  "devices": [
+    {
+      "id": "F01",
+      "name": "Fermentor F01",
+      "inputTopic": "riprapt/F01/in",
+      "outputRoot": "riprapt/F01/out"
+    }
+  ]
+}
+```
+
+Der Import prüft Format, Version, Broker-URL, eindeutige Fermenter-IDs und MQTT-Topics. Über eine per HTTPS ausgelieferte GitHub Page wird nur `wss://` akzeptiert. MQTT-Wildcards (`#`, `+`) sind in den konfigurierten Geräte-Topics nicht zulässig.
+
+Nach erfolgreichem Import werden die Werte zunächst nur im Einstellungsdialog angezeigt. Erst **Speichern & verbinden** übernimmt sie in den lokalen Browser-Speicher und baut die MQTT-Verbindung neu auf.
+
+**Sicherheit:** Die Credentials-Datei enthält das MQTT-Passwort im Klartext und muss entsprechend geschützt aufbewahrt werden. Das Seitenkennwort und das MQTT-Kennwort sollten unterschiedlich sein.
+
 ## MQTT
 
 Im Einstellungsdialog wird eine vollständige WebSocket-URL eingetragen, z. B.:
