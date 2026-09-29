@@ -27,7 +27,7 @@
     _concat(...arrays){const len=arrays.reduce((n,a)=>n+a.length,0),out=new Uint8Array(len);let p=0;for(const a of arrays){out.set(a,p);p+=a.length}return out}
   }
 
-  let config=loadConfig(), selectedId=config.devices[0]?.id||'', states={}, client=null, brokerConnected=false;
+  let config=loadConfig(), settingsDraft=null, selectedId=config.devices[0]?.id||'', states={}, client=null, brokerConnected=false;
   config.devices.forEach(d=>states[d.id]=blankState(d.id));
   const $=id=>document.getElementById(id);
   const safeJson=t=>{try{return JSON.parse(t)}catch{return null}};
@@ -36,6 +36,67 @@
   function blankState(id){return{availability:'unknown',status:{},control:{},profile:{},network:{},alarm:{},profiles:{},lastAck:'',lastMessageAt:0,history:loadHistory(id)}}
   function loadConfig(){try{const p=JSON.parse(localStorage.getItem(CONFIG_KEY)||'null');return p?.broker?.url&&Array.isArray(p.devices)&&p.devices.length?p:structuredClone(defaultConfig)}catch{return structuredClone(defaultConfig)}}
   function saveConfig(){localStorage.setItem(CONFIG_KEY,JSON.stringify(config))}
+  function validateConnectionConfig(candidate){
+    if(!candidate||typeof candidate!=='object')throw new Error('Ungültige Konfiguration.');
+    if(!candidate.broker||typeof candidate.broker!=='object')throw new Error('Broker-Konfiguration fehlt.');
+    const urlText=String(candidate.broker.url||'').trim();
+    let url;
+    try{url=new URL(urlText)}catch{throw new Error('MQTT WebSocket URL ist ungültig.')}
+    if(!['wss:','ws:'].includes(url.protocol))throw new Error('MQTT URL muss ws:// oder wss:// verwenden.');
+    if(location.protocol==='https:'&&url.protocol!=='wss:')throw new Error('Über HTTPS ist ausschließlich wss:// zulässig.');
+    if(!Array.isArray(candidate.devices)||candidate.devices.length<1)throw new Error('Mindestens ein Fermenter ist erforderlich.');
+    if(candidate.devices.length>32)throw new Error('Maximal 32 Fermenter sind zulässig.');
+    const ids=new Set();
+    const devices=candidate.devices.map((raw,index)=>{
+      if(!raw||typeof raw!=='object')throw new Error(`Fermenter ${index+1} ist ungültig.`);
+      const id=String(raw.id||'').trim();
+      const name=String(raw.name||id||`Fermentor ${index+1}`).trim();
+      const inputTopic=String(raw.inputTopic||'').trim();
+      const outputRoot=String(raw.outputRoot||'').trim().replace(/\/+$/,'');
+      if(!id)throw new Error(`Fermenter ${index+1}: ID fehlt.`);
+      if(ids.has(id))throw new Error(`Fermenter-ID "${id}" ist doppelt vorhanden.`);
+      ids.add(id);
+      if(!inputTopic||!outputRoot)throw new Error(`Fermenter ${id}: MQTT-Topics fehlen.`);
+      if(/[#+]/.test(inputTopic)||/[#+]/.test(outputRoot))throw new Error(`Fermenter ${id}: Wildcards (#/+) sind in den konfigurierten Topics nicht zulässig.`);
+      return{id,name,inputTopic,outputRoot};
+    });
+    return{
+      broker:{
+        url:urlText,
+        username:String(candidate.broker.username??''),
+        password:String(candidate.broker.password??'')
+      },
+      devices
+    };
+  }
+  function parseCredentialsDocument(document){
+    if(!document||document.format!=='riprapt-remote-credentials')throw new Error('Unbekanntes Credentials-Format.');
+    if(document.version!==1)throw new Error(`Nicht unterstützte Credentials-Version: ${document.version??'fehlt'}.`);
+    return validateConnectionConfig({broker:document.broker,devices:document.devices});
+  }
+  function setImportStatus(message,isError=false){
+    const node=$('credentials-import-status');
+    node.textContent=message||'';
+    node.classList.toggle('hidden',!message);
+    node.style.color=isError?'#ff9a9a':'#76e3ad';
+  }
+  function fillSettingsForm(){
+    if(!settingsDraft)return;
+    $('broker-url').value=settingsDraft.broker.url;
+    $('broker-user').value=settingsDraft.broker.username;
+    $('broker-password').value=settingsDraft.broker.password;
+    renderDeviceEditors();
+  }
+  async function importCredentialsFile(file){
+    setImportStatus('');
+    if(!file)return;
+    if(file.size>65536)throw new Error('Credentials-Datei ist größer als 64 KiB.');
+    let document;
+    try{document=JSON.parse(await file.text())}catch{throw new Error('Credentials-Datei enthält kein gültiges JSON.')}
+    settingsDraft=parseCredentialsDocument(document);
+    fillSettingsForm();
+    setImportStatus(`Credentials aus "${file.name}" geprüft. Zum Übernehmen "Speichern & verbinden" klicken.`);
+  }
   function loadHistory(id){try{const p=JSON.parse(localStorage.getItem(HISTORY_PREFIX+id)||'[]');return Array.isArray(p)?p.slice(-360):[]}catch{return[]}}
   function saveHistory(id,h){localStorage.setItem(HISTORY_PREFIX+id,JSON.stringify(h.slice(-360)))}
   function selectedDevice(){return config.devices.find(d=>d.id===selectedId)||config.devices[0]}
@@ -61,9 +122,28 @@
     const a=s.alarm||{},active=!!(a.temperature?.active||a.sensor?.active);$('alarm-notice').classList.toggle('hidden',!active);$('alarm-text').textContent=a.sensor?.active?`${a.sensor.trigger_role||'Sensor'}: ${a.sensor.trigger_reason||'Fehler'}`:`Temperaturabweichung ${fmt(a.temperature?.trigger_deviation_c,1,' °C')}`;drawChart(s.history)
   }
   function drawChart(points){const svg=$('chart'),valid=(points||[]).filter(p=>p.temperature!==null||p.setpoint!==null);svg.innerHTML='';if(valid.length<2){svg.innerHTML='<text x="450" y="130" text-anchor="middle" class="chart-empty">Noch keine Verlaufsdaten</text>';return}const vals=valid.flatMap(p=>[p.temperature,p.setpoint].filter(Number.isFinite)),min=Math.min(...vals)-.5,max=Math.max(...vals)+.5,range=Math.max(1,max-min),W=900,H=260,P=22,x=i=>P+i/Math.max(1,valid.length-1)*(W-2*P),y=v=>H-P-(v-min)/range*(H-2*P);const ns='http://www.w3.org/2000/svg';const line=document.createElementNS(ns,'line');line.setAttribute('x1',P);line.setAttribute('y1',H-P);line.setAttribute('x2',W-P);line.setAttribute('y2',H-P);line.setAttribute('class','axis');svg.appendChild(line);for(const [key,cls] of [['setpoint','setpoint-line'],['temperature','temperature-line']]){let path='',drawing=false;valid.forEach((p,i)=>{const v=p[key];if(!Number.isFinite(v)){drawing=false;return}path+=`${drawing?' L':'M'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`;drawing=true});const el=document.createElementNS(ns,'path');el.setAttribute('d',path);el.setAttribute('class',cls);svg.appendChild(el)}for(const [yy,text] of [[18,max.toFixed(1)+' °C'],[H-5,min.toFixed(1)+' °C']]){const el=document.createElementNS(ns,'text');el.setAttribute('x',P);el.setAttribute('y',yy);el.setAttribute('class','chart-label');el.textContent=text;svg.appendChild(el)}}
-  function openSettings(){const m=$('settings-modal');$('broker-url').value=config.broker.url;$('broker-user').value=config.broker.username;$('broker-password').value=config.broker.password;renderDeviceEditors();m.classList.remove('hidden')}
-  function renderDeviceEditors(){const box=$('device-editor-list');box.innerHTML='';config.devices.forEach((d,i)=>{const e=document.createElement('div');e.className='device-editor';e.innerHTML=`<div class="form-grid"><label>ID<input data-field="id" value="${esc(d.id)}"></label><label>Anzeigename<input data-field="name" value="${esc(d.name)}"></label></div><label>Input Topic<input data-field="inputTopic" value="${esc(d.inputTopic)}"></label><label>Output Root<input data-field="outputRoot" value="${esc(d.outputRoot)}"></label>${config.devices.length>1?'<button class="ghost danger remove-device">Fermenter entfernen</button>':''}`;e.querySelectorAll('input').forEach(inp=>inp.oninput=()=>{config.devices[i][inp.dataset.field]=inp.value});const rm=e.querySelector('.remove-device');if(rm)rm.onclick=()=>{config.devices.splice(i,1);renderDeviceEditors()};box.appendChild(e)})}
+  function openSettings(){settingsDraft=structuredClone(config);setImportStatus('');fillSettingsForm();$('settings-modal').classList.remove('hidden')}
+  function renderDeviceEditors(){const box=$('device-editor-list');box.innerHTML='';if(!settingsDraft)return;settingsDraft.devices.forEach((d,i)=>{const e=document.createElement('div');e.className='device-editor';e.innerHTML=`<div class="form-grid"><label>ID<input data-field="id" value="${esc(d.id)}"></label><label>Anzeigename<input data-field="name" value="${esc(d.name)}"></label></div><label>Input Topic<input data-field="inputTopic" value="${esc(d.inputTopic)}"></label><label>Output Root<input data-field="outputRoot" value="${esc(d.outputRoot)}"></label>${settingsDraft.devices.length>1?'<button class="ghost danger remove-device">Fermenter entfernen</button>':''}`;e.querySelectorAll('input').forEach(inp=>inp.oninput=()=>{settingsDraft.devices[i][inp.dataset.field]=inp.value});const rm=e.querySelector('.remove-device');if(rm)rm.onclick=()=>{settingsDraft.devices.splice(i,1);renderDeviceEditors()};box.appendChild(e)})}
   function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-  $('open-settings').onclick=openSettings;$('close-settings').onclick=()=>$('settings-modal').classList.add('hidden');$('save-settings').onclick=()=>{config.broker.url=$('broker-url').value.trim();config.broker.username=$('broker-user').value;config.broker.password=$('broker-password').value;if(!config.broker.url||!config.devices.length){setError('Broker-URL und mindestens ein Fermenter sind erforderlich.');return}saveConfig();const old=states;states={};config.devices.forEach(d=>states[d.id]=old[d.id]||blankState(d.id));if(!config.devices.some(d=>d.id===selectedId))selectedId=config.devices[0].id;$('settings-modal').classList.add('hidden');connect();render()};$('add-device').onclick=()=>{const id=`F${String(config.devices.length+1).padStart(2,'0')}`;config.devices.push({id,name:`Fermentor ${id}`,inputTopic:`riprapt/${id}/in`,outputRoot:`riprapt/${id}/out`});renderDeviceEditors()};$('reset-config').onclick=()=>{localStorage.removeItem(CONFIG_KEY);location.reload()};$('ack-alarm').onclick=()=>publish({command:'alarm',action:'acknowledge',target:'all'});$('setpoint-send').onclick=()=>{const v=Number($('setpoint-input').value);if(Number.isFinite(v)){publish({command:'setpoint',value:v});$('setpoint-input').value=''}};document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>publish({command:'mode',value:b.dataset.mode}));$('status-request').onclick=()=>publish({command:'status'});$('profile-select').onchange=e=>{if(e.target.value!=='')publish({command:'profile',action:'select',profile_id:Number(e.target.value)})};$('profile-start').onclick=()=>{const v=$('profile-select').value;publish({command:'profile',action:'start',...(v!==''?{profile_id:Number(v)}:{})})};$('profile-stop').onclick=()=>publish({command:'profile',action:'stop'});
+  $('open-settings').onclick=openSettings;
+  $('close-settings').onclick=()=>{settingsDraft=null;$('settings-modal').classList.add('hidden')};
+  $('import-credentials').onclick=()=>{$('credentials-file').value='';$('credentials-file').click()};
+  $('credentials-file').onchange=async event=>{try{await importCredentialsFile(event.target.files?.[0])}catch(error){setImportStatus(error?.message||'Credentials-Import fehlgeschlagen.',true)}};
+  $('save-settings').onclick=()=>{try{
+    if(!settingsDraft)settingsDraft=structuredClone(config);
+    settingsDraft.broker.url=$('broker-url').value.trim();
+    settingsDraft.broker.username=$('broker-user').value;
+    settingsDraft.broker.password=$('broker-password').value;
+    config=validateConnectionConfig(settingsDraft);
+    settingsDraft=null;
+    saveConfig();
+    const old=states;states={};
+    config.devices.forEach(d=>states[d.id]=old[d.id]||blankState(d.id));
+    if(!config.devices.some(d=>d.id===selectedId))selectedId=config.devices[0].id;
+    $('settings-modal').classList.add('hidden');
+    connect();render();
+  }catch(error){setImportStatus(error?.message||'Konfiguration ist ungültig.',true)}};
+  $('add-device').onclick=()=>{if(!settingsDraft)settingsDraft=structuredClone(config);const id=`F${String(settingsDraft.devices.length+1).padStart(2,'0')}`;settingsDraft.devices.push({id,name:`Fermentor ${id}`,inputTopic:`riprapt/${id}/in`,outputRoot:`riprapt/${id}/out`});renderDeviceEditors()};
+  $('reset-config').onclick=()=>{localStorage.removeItem(CONFIG_KEY);location.reload()};$('ack-alarm').onclick=()=>publish({command:'alarm',action:'acknowledge',target:'all'});$('setpoint-send').onclick=()=>{const v=Number($('setpoint-input').value);if(Number.isFinite(v)){publish({command:'setpoint',value:v});$('setpoint-input').value=''}};document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>publish({command:'mode',value:b.dataset.mode}));$('status-request').onclick=()=>publish({command:'status'});$('profile-select').onchange=e=>{if(e.target.value!=='')publish({command:'profile',action:'select',profile_id:Number(e.target.value)})};$('profile-start').onclick=()=>{const v=$('profile-select').value;publish({command:'profile',action:'start',...(v!==''?{profile_id:Number(v)}:{})})};$('profile-stop').onclick=()=>publish({command:'profile',action:'stop'});
   render();connect();
 })();
