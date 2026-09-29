@@ -3,15 +3,13 @@
 
   const CONFIG_KEY='riprapt-remote-config-v2';
   const LEGACY_CONFIG_KEY='riprapt-remote-config-v1';
-  const DEVICE_CACHE_KEY='riprapt-remote-device-cache-v2';
+  const LEGACY_DEVICE_CACHE_KEY='riprapt-remote-device-cache-v2';
   const HISTORY_PREFIX='riprapt-remote-history-v1:';
+  const ARCHIVE_TAB='__profile_archive__';
 
   const TOPICS={
     globalAvailability:'fermentorcontrol/availability',
-    state:'fermentorcontrol/+/state',
-    availability:'fermentorcontrol/+/availability',
-    profiles:'fermentorcontrol/+/profiles',
-    commandResult:'fermentorcontrol/+/command_result'
+    archiveState:'fermentorcontrol/profile-archive/state'
   };
 
   const defaultConfig={broker:{host:'',username:'',password:''}};
@@ -98,6 +96,13 @@
       this.ws.send(this._packet(0x82,payload));
     }
 
+    unsubscribe(topic) {
+      if(!this.connected)return;
+      const id=this.packetId++||1;
+      const payload=this._concat(this._u16(id),this._str(topic));
+      this.ws.send(this._packet(0xA2,payload));
+    }
+
     publish(topic,text) {
       if(!this.connected)throw new Error('MQTT ist nicht verbunden');
       const body=this._concat(this._str(topic),new TextEncoder().encode(text));
@@ -112,6 +117,7 @@
 
       const variable=Uint8Array.from([0,4,77,81,84,84,4,flags,0,30]);
       const parts=[variable,this._str(clientId)];
+
       if(o.username)parts.push(this._str(o.username));
       if(o.password)parts.push(this._str(o.password));
 
@@ -221,26 +227,30 @@
 
   const $=id=>document.getElementById(id);
   const safeJson=text=>{try{return JSON.parse(text)}catch{return null}};
-  const fmt=(value,digits=1,suffix='')=>Number.isFinite(value)?Number(value).toFixed(digits)+suffix:'—';
+  const finite=value=>Number.isFinite(Number(value))?Number(value):null;
+  const fmt=(value,digits=1,suffix='')=>finite(value)!==null?finite(value).toFixed(digits)+suffix:'—';
   const duration=seconds=>{
-    if(!Number.isFinite(seconds))return'—';
-    seconds=Math.max(0,Math.floor(seconds));
-    const days=Math.floor(seconds/86400);
-    const hours=Math.floor(seconds%86400/3600);
-    const minutes=Math.floor(seconds%3600/60);
+    const value=finite(seconds);
+    if(value===null)return'—';
+    const total=Math.max(0,Math.floor(value));
+    const days=Math.floor(total/86400);
+    const hours=Math.floor(total%86400/3600);
+    const minutes=Math.floor(total%3600/60);
     return days?`${days}d ${hours}h ${minutes}m`:`${hours}h ${minutes}m`;
   };
 
   let config=loadConfig();
   let settingsDraft=null;
-  let devices=loadDeviceCache().map(deviceFromId);
-  let selectedId=devices[0]?.id||'';
+  let devices=[];
+  let selectedId='';
   let states={};
+  let archiveState={count:0,profiles:[],targets:[]};
   let client=null;
   let brokerConnected=false;
   let fermentControlOnline=false;
+  let subscribedDeviceIds=new Set();
 
-  devices.forEach(device=>states[device.id]=blankState(device.id));
+  localStorage.removeItem(LEGACY_DEVICE_CACHE_KEY);
 
   function normalizeBrokerHost(value) {
     const raw=String(value||'').trim();
@@ -296,105 +306,6 @@
     localStorage.removeItem(LEGACY_CONFIG_KEY);
   }
 
-  function loadDeviceCache() {
-    try{
-      const ids=JSON.parse(localStorage.getItem(DEVICE_CACHE_KEY)||'[]');
-      return Array.isArray(ids)?ids.filter(validDeviceId).slice(0,64):[];
-    }catch{
-      return[];
-    }
-  }
-
-  function saveDeviceCache() {
-    localStorage.setItem(DEVICE_CACHE_KEY,JSON.stringify(devices.map(device=>device.id)));
-  }
-
-  function validDeviceId(id) {
-    return typeof id==='string'&&id.length>0&&id.length<=64&&!/[\/# +]/.test(id)&&!id.includes('+');
-  }
-
-  function deviceFromId(id) {
-    return{id,name:`Fermenter ${id}`};
-  }
-
-  function discoverDevice(id,name='') {
-    if(!validDeviceId(id))return null;
-
-    let device=devices.find(item=>item.id===id);
-    if(device){
-      if(name&&device.name!==name)device.name=name;
-      return device;
-    }
-
-    device={id,name:name||`Fermenter ${id}`};
-    devices.push(device);
-    devices.sort((a,b)=>a.id.localeCompare(b.id,undefined,{numeric:true,sensitivity:'base'}));
-    states[id]=blankState(id);
-
-    if(!selectedId)selectedId=id;
-
-    saveDeviceCache();
-    renderTabs();
-    return device;
-  }
-
-  function blankState(id) {
-    return{
-      availability:'unknown',
-      state:{},
-      profiles:{},
-      lastCommandResult:'',
-      lastMessageAt:0,
-      history:loadHistory(id)
-    };
-  }
-
-  function loadHistory(id) {
-    try{
-      const parsed=JSON.parse(localStorage.getItem(HISTORY_PREFIX+id)||'[]');
-      return Array.isArray(parsed)?parsed.slice(-360):[];
-    }catch{
-      return[];
-    }
-  }
-
-  function saveHistory(id,history) {
-    localStorage.setItem(HISTORY_PREFIX+id,JSON.stringify(history.slice(-360)));
-  }
-
-  function selectedDevice() {
-    return devices.find(device=>device.id===selectedId)||devices[0]||null;
-  }
-
-  function selectedState() {
-    const device=selectedDevice();
-    return device?(states[device.id]||(states[device.id]=blankState(device.id))):null;
-  }
-
-  function setError(text) {
-    $('error-notice').textContent=text||'';
-    $('error-notice').classList.toggle('hidden',!text);
-  }
-
-  function updateBrokerPill() {
-    const element=$('broker-pill');
-
-    if(!brokerConnected){
-      element.textContent='Broker offline';
-      element.className='pill bad';
-      return;
-    }
-
-    if(!fermentControlOnline){
-      element.textContent='Broker verbunden';
-      element.className='pill warn';
-      return;
-    }
-
-    element.textContent='FermentControl online';
-    element.className='pill good';
-  }
-
   function validateBrokerConfig(candidate) {
     if(!candidate||typeof candidate!=='object'||!candidate.broker)throw new Error('Broker-Konfiguration fehlt.');
 
@@ -413,9 +324,7 @@
   function parseCredentialsDocument(document) {
     if(!document||document.format!=='riprapt-remote-credentials')throw new Error('Unbekanntes Credentials-Format.');
 
-    if(document.version===2){
-      return validateBrokerConfig({broker:document.broker});
-    }
+    if(document.version===2)return validateBrokerConfig({broker:document.broker});
 
     if(document.version===1){
       const migrated=migrateLegacyConfig({broker:document.broker});
@@ -457,12 +366,122 @@
     setImportStatus(`Credentials aus "${file.name}" geprüft. Zum Übernehmen "Speichern & verbinden" klicken.`);
   }
 
-  function addHistory(state,id) {
-    const data=state.state||{};
-    const temperature=Number(data.temperatureC);
-    const setpoint=Number(data.setpointC);
+  function loadHistory(id) {
+    try{
+      const parsed=JSON.parse(localStorage.getItem(HISTORY_PREFIX+id)||'[]');
+      return Array.isArray(parsed)?parsed.slice(-360):[];
+    }catch{
+      return[];
+    }
+  }
 
-    if(!Number.isFinite(temperature)&&!Number.isFinite(setpoint))return;
+  function saveHistory(id,history) {
+    localStorage.setItem(HISTORY_PREFIX+id,JSON.stringify(history.slice(-360)));
+  }
+
+  function blankState(id) {
+    return{
+      availability:'unknown',
+      publicState:null,
+      profiles:null,
+      lastCommandResult:'',
+      lastMessageAt:0,
+      history:loadHistory(id)
+    };
+  }
+
+  function selectedDevice() {
+    return devices.find(device=>device.id===selectedId)||null;
+  }
+
+  function selectedState() {
+    const device=selectedDevice();
+    return device?(states[device.id]||(states[device.id]=blankState(device.id))):null;
+  }
+
+  function setError(text) {
+    $('error-notice').textContent=text||'';
+    $('error-notice').classList.toggle('hidden',!text);
+  }
+
+  function updateBrokerPill() {
+    const element=$('broker-pill');
+
+    if(!brokerConnected){
+      element.textContent='Broker offline';
+      element.className='pill bad';
+    }else if(!fermentControlOnline){
+      element.textContent='Broker verbunden';
+      element.className='pill warn';
+    }else{
+      element.textContent='FermentControl online';
+      element.className='pill good';
+    }
+  }
+
+  function topicsForDevice(id) {
+    const root=`fermentorcontrol/${id}`;
+    return[
+      `${root}/state`,
+      `${root}/availability`,
+      `${root}/profiles`,
+      `${root}/command_result`
+    ];
+  }
+
+  function syncDeviceSubscriptions(nextIds) {
+    if(!client?.connected)return;
+
+    for(const id of subscribedDeviceIds){
+      if(nextIds.has(id))continue;
+      for(const topic of topicsForDevice(id))client.unsubscribe(topic);
+      subscribedDeviceIds.delete(id);
+    }
+
+    for(const id of nextIds){
+      if(subscribedDeviceIds.has(id))continue;
+      for(const topic of topicsForDevice(id))client.subscribe(topic);
+      subscribedDeviceIds.add(id);
+    }
+  }
+
+  function syncCurrentDevices(targets) {
+    const clean=(Array.isArray(targets)?targets:[])
+      .filter(target=>target&&typeof target.id==='string'&&target.id&&target.id!=='profile-archive')
+      .map(target=>({
+        id:target.id,
+        name:String(target.name||target.id),
+        online:target.online===true,
+        writable:target.writable===true
+      }));
+
+    const nextIds=new Set(clean.map(device=>device.id));
+    syncDeviceSubscriptions(nextIds);
+
+    const nextStates={};
+    for(const device of clean){
+      nextStates[device.id]=states[device.id]||blankState(device.id);
+    }
+
+    states=nextStates;
+    devices=clean;
+
+    if(selectedId!==ARCHIVE_TAB&&!nextIds.has(selectedId)){
+      selectedId=devices[0]?.id||ARCHIVE_TAB;
+    }
+
+    renderTabs();
+    render();
+  }
+
+  function addHistory(state,id) {
+    const data=state.publicState;
+    if(!data)return;
+
+    const temperature=data.temperature?.valid?finite(data.temperature.beerC):null;
+    const setpoint=finite(data.temperature?.setpointC);
+
+    if(temperature===null&&setpoint===null)return;
 
     const now=Date.now();
     const last=state.history[state.history.length-1];
@@ -470,20 +489,28 @@
 
     state.history=[
       ...state.history,
-      {
-        ts:now,
-        temperature:Number.isFinite(temperature)?temperature:null,
-        setpoint:Number.isFinite(setpoint)?setpoint:null
-      }
+      {ts:now,temperature,setpoint}
     ].slice(-360);
 
     saveHistory(id,state.history);
   }
 
-  function handleExternalMessage(topic,payload) {
+  function handleMessage(topic,payload) {
     if(topic===TOPICS.globalAvailability){
       fermentControlOnline=payload==='online';
       updateBrokerPill();
+      return;
+    }
+
+    if(topic===TOPICS.archiveState){
+      const parsed=safeJson(payload);
+      if(!parsed||typeof parsed!=='object'){
+        setError('Profilarchiv-State konnte nicht gelesen werden. External-MQTT-Recht "Profile anzeigen" prüfen.');
+        return;
+      }
+
+      archiveState=parsed;
+      syncCurrentDevices(parsed.targets);
       return;
     }
 
@@ -493,12 +520,7 @@
     const id=match[1];
     const suffix=match[2];
 
-    if(!validDeviceId(id))return;
-
-    const parsed=suffix==='availability'?null:safeJson(payload);
-    const statePayload=suffix==='state'&&parsed&&typeof parsed==='object'?parsed:null;
-    const device=discoverDevice(id,statePayload?.name||'');
-    if(!device)return;
+    if(!devices.some(device=>device.id===id))return;
 
     const state=states[id]||(states[id]=blankState(id));
     state.lastMessageAt=Date.now();
@@ -506,20 +528,22 @@
     if(suffix==='availability'){
       state.availability=payload==='online'?'online':'offline';
     }else if(suffix==='state'){
-      if(statePayload){
-        state.state=statePayload;
-        if(typeof statePayload.name==='string'&&statePayload.name)device.name=statePayload.name;
-        if(statePayload.controller?.online===true)state.availability='online';
-        else if(statePayload.controller?.online===false)state.availability='offline';
+      const parsed=safeJson(payload);
+      if(parsed&&typeof parsed==='object'){
+        state.publicState=parsed;
+        state.availability=parsed.connectionStatus||state.availability;
+        const device=devices.find(item=>item.id===id);
+        if(device&&parsed.name)device.name=String(parsed.name);
         addHistory(state,id);
       }
     }else if(suffix==='profiles'){
+      const parsed=safeJson(payload);
       if(parsed&&typeof parsed==='object')state.profiles=parsed;
     }else if(suffix==='command_result'){
       state.lastCommandResult=payload;
     }
 
-    if(id===selectedId)render();
+    if(selectedId===id)render();
     else renderTabs();
   }
 
@@ -531,8 +555,15 @@
 
     brokerConnected=false;
     fermentControlOnline=false;
+    subscribedDeviceIds.clear();
+    devices=[];
+    states={};
+    archiveState={count:0,profiles:[],targets:[]};
+    selectedId='';
+
     updateBrokerPill();
     setError('');
+    render();
 
     if(!config.broker.host){
       setError('Noch keine HiveMQ-Verbindung konfiguriert. Öffne "Verbindung".');
@@ -555,10 +586,7 @@
 
         try{
           client.subscribe(TOPICS.globalAvailability);
-          client.subscribe(TOPICS.state);
-          client.subscribe(TOPICS.availability);
-          client.subscribe(TOPICS.profiles);
-          client.subscribe(TOPICS.commandResult);
+          client.subscribe(TOPICS.archiveState);
         }catch(error){
           setError(String(error));
         }
@@ -568,15 +596,16 @@
       close:()=>{
         brokerConnected=false;
         fermentControlOnline=false;
+        subscribedDeviceIds.clear();
         updateBrokerPill();
       },
       error:error=>setError('MQTT: '+(error?.message||error)),
       suback:(topic,codes)=>{
         if(codes.some(code=>code===0x80)){
-          setError(`HiveMQ verweigert SUBSCRIBE auf "${topic}". External-MQTT-Berechtigungen des Benutzers prüfen.`);
+          setError(`HiveMQ verweigert SUBSCRIBE auf "${topic}". MQTT-Berechtigungen prüfen.`);
         }
       },
-      message:handleExternalMessage
+      message:handleMessage
     });
 
     try{
@@ -594,13 +623,13 @@
     const device=selectedDevice();
 
     if(!device||!client?.connected){
-      setError('MQTT ist nicht verbunden oder es wurde noch kein Fermenter erkannt.');
+      setError('MQTT ist nicht verbunden oder es wurde kein aktueller Fermenter ausgewählt.');
       return;
     }
 
     client.publish(
       `fermentorcontrol/${device.id}/command/${path}`,
-      JSON.stringify(payload)
+      JSON.stringify({id:crypto.randomUUID(),...payload})
     );
   }
 
@@ -608,17 +637,7 @@
     const box=$('device-tabs');
     box.innerHTML='';
 
-    if(!devices.length){
-      const placeholder=document.createElement('span');
-      placeholder.className='hint';
-      placeholder.textContent=brokerConnected?
-        'Warte auf FermentControl-Telemetrie …':
-        'Noch keine Fermenter erkannt';
-      box.appendChild(placeholder);
-      return;
-    }
-
-    devices.forEach(device=>{
+    for(const device of devices){
       const button=document.createElement('button');
       button.textContent=device.name;
       button.className=device.id===selectedId?'active':'';
@@ -627,10 +646,71 @@
         render();
       };
       box.appendChild(button);
-    });
+    }
+
+    const archiveButton=document.createElement('button');
+    archiveButton.textContent='Profilarchiv';
+    archiveButton.className=selectedId===ARCHIVE_TAB?'active':'';
+    archiveButton.onclick=()=>{
+      selectedId=ARCHIVE_TAB;
+      render();
+    };
+    box.appendChild(archiveButton);
   }
 
-  function renderEmpty() {
+  function setView(archive) {
+    document.querySelectorAll('.hero-grid,.content-grid').forEach(element=>{
+      element.classList.toggle('hidden',archive);
+    });
+    $('profile-archive-view').classList.toggle('hidden',!archive);
+  }
+
+  function renderArchive() {
+    setView(true);
+
+    const profiles=Array.isArray(archiveState.profiles)?archiveState.profiles:[];
+    $('archive-count').textContent=`${profiles.length} ${profiles.length===1?'Profil':'Profile'}`;
+    $('archive-selected').textContent=archiveState.selectedProfileName||'—';
+    $('archive-target').textContent=archiveState.targetFermenterName||'—';
+
+    const list=$('archive-profile-list');
+    list.innerHTML='';
+
+    if(!profiles.length){
+      const empty=document.createElement('p');
+      empty.className='hint';
+      empty.textContent='Keine Archivprofile vorhanden.';
+      list.appendChild(empty);
+      return;
+    }
+
+    for(const profile of profiles){
+      const item=document.createElement('div');
+      item.className='archive-item';
+
+      const text=document.createElement('div');
+      const title=document.createElement('strong');
+      const meta=document.createElement('span');
+
+      title.textContent=profile.name||'Unbenanntes Profil';
+      meta.textContent=`${profile.steps??0} Schritte · ${profile.archiveId||'—'}`;
+
+      text.appendChild(title);
+      text.appendChild(meta);
+      item.appendChild(text);
+
+      if(profile.archiveId===archiveState.selectedArchiveId){
+        const badge=document.createElement('span');
+        badge.className='pill good';
+        badge.textContent='Ausgewählt';
+        item.appendChild(badge);
+      }
+
+      list.appendChild(item);
+    }
+  }
+
+  function renderEmptyFermenter() {
     $('availability').textContent='UNKNOWN';
     $('availability').className='status-dot offline';
     $('temperature').textContent='—';
@@ -642,7 +722,7 @@
     $('regulation').textContent='—';
     $('density').textContent='—';
     $('density-change').textContent='—';
-    $('profile-name').textContent='Kein Fermenter erkannt';
+    $('profile-name').textContent='Keine aktuellen Fermenter';
     $('profile-step').textContent='Schritt 0 / 0';
     $('profile-remaining').textContent='—';
     $('profile-flags').innerHTML='';
@@ -652,46 +732,44 @@
     drawChart([]);
   }
 
-  function profileOptions(state) {
-    const raw=state.profiles;
-    if(Array.isArray(raw))return raw;
-    if(Array.isArray(raw?.profiles))return raw.profiles;
-    return[];
-  }
-
-  function render() {
-    renderTabs();
+  function renderFermenter() {
+    setView(false);
 
     const device=selectedDevice();
     const state=selectedState();
 
-    if(!device||!state){
-      renderEmpty();
+    if(!device||!state||!state.publicState){
+      renderEmptyFermenter();
       return;
     }
 
-    const data=state.state||{};
-    const controller=data.controller||{};
+    const data=state.publicState;
+    const temperature=data.temperature||{};
+    const gravity=data.gravity||{};
+    const control=data.control||{};
     const profile=data.profile||{};
-    const alarms=data.alarms||data.alarm||{};
+    const network=data.controller?.network||{};
+    const firmware=data.controller?.firmware||{};
+    const alarm=data.alarm||{};
 
-    const online=brokerConnected&&(state.availability==='online'||controller.online===true);
-    $('availability').textContent=online?'ONLINE':String(state.availability||'unknown').toUpperCase();
+    const online=data.connectionStatus==='online'||state.availability==='online';
+
+    $('availability').textContent=online?'ONLINE':String(data.connectionStatus||state.availability||'unknown').toUpperCase();
     $('availability').className='status-dot '+(online?'online':'offline');
 
-    $('temperature').textContent=fmt(Number(data.temperatureC),1,' °C');
-    $('setpoint').textContent='Sollwert '+fmt(Number(data.setpointC),1,' °C');
-    $('heat').classList.toggle('on',data.heating===true);
-    $('cool').classList.toggle('on',data.cooling===true);
-    $('output').textContent='Output '+fmt(Number(data.outputPercent),1,' %');
-    $('mode').textContent=data.mode??'—';
-    $('regulation').textContent=data.regulation??'—';
-    $('density').textContent=fmt(Number(data.densitySG),5);
-    $('density-change').textContent=fmt(Number(data.densityChangePerDay),5);
+    $('temperature').textContent=temperature.valid?fmt(temperature.beerC,1,' °C'):'—';
+    $('setpoint').textContent='Sollwert '+fmt(temperature.setpointC,1,' °C');
+    $('heat').classList.toggle('on',control.heating===true);
+    $('cool').classList.toggle('on',control.cooling===true);
+    $('output').textContent='Output '+fmt(control.outputPercent,1,' %');
+    $('mode').textContent=control.mode??'—';
+    $('regulation').textContent=control.regulation??'—';
+    $('density').textContent=gravity.valid?fmt(gravity.sg,5):'—';
+    $('density-change').textContent=gravity.changePerDayValid?fmt(gravity.changePerDay,5):'—';
 
     $('profile-name').textContent=profile.name||'Kein Profil gewählt';
     $('profile-step').textContent=`Schritt ${profile.step??0} / ${profile.steps??0}`;
-    $('profile-remaining').textContent=duration(Number(profile.remainingSeconds));
+    $('profile-remaining').textContent=duration(profile.remainingSeconds);
 
     const flags=$('profile-flags');
     flags.innerHTML='';
@@ -712,52 +790,62 @@
       }
     }
 
+    const library=state.profiles;
     const select=$('profile-select');
-    const options=profileOptions(state);
-    const currentId=profile.id??state.profiles?.selectedId??state.profiles?.selected_id??'';
+    const options=Array.isArray(library?.profiles)?library.profiles:[];
+    const currentId=library?.selectedId??profile.id??'';
 
     select.innerHTML='<option value="">Profil wählen</option>';
 
     for(const item of options){
-      const id=item.id??item.profileId??item.profile_id;
-      if(id===undefined||id===null)continue;
-
+      if(item?.id===undefined||item?.id===null)continue;
       const option=document.createElement('option');
-      option.value=String(id);
-      option.textContent=item.name?`${item.name} (ID ${id})`:`Profil ID ${id}`;
+      option.value=String(item.id);
+      option.textContent=item.name?`${item.name} (ID ${item.id})`:`Profil ID ${item.id}`;
       select.appendChild(option);
     }
 
     select.value=currentId===undefined||currentId===null?'':String(currentId);
 
-    $('hostname').textContent=controller.hostname??controller.hostName??'—';
-    $('ip').textContent=controller.ip??controller.ipAddress??'—';
-    $('rssi').textContent=Number.isFinite(Number(controller.rssiDbm))?`${Number(controller.rssiDbm)} dBm`:'—';
-    $('mac').textContent=controller.mac??controller.macAddress??'—';
-    $('firmware').textContent=controller.firmware??controller.firmwareVersion??'—';
+    $('hostname').textContent=network.hostname??'—';
+    $('ip').textContent=network.ip??'—';
+    $('rssi').textContent=finite(network.rssiDbm)!==null?`${finite(network.rssiDbm)} dBm`:'—';
+    $('mac').textContent=network.mac??'—';
+    $('firmware').textContent=
+      (firmware.version??'—')+
+      (finite(firmware.build)!==null?` (${finite(firmware.build)})`:'');
     $('last-message').textContent=state.lastMessageAt?new Date(state.lastMessageAt).toLocaleTimeString():'—';
     $('last-ack').textContent=state.lastCommandResult||'—';
 
-    const temperatureAlarm=alarms.temperature||alarms.temperatureAlarm||{};
-    const sensorAlarm=alarms.sensor||alarms.sensorAlarm||{};
-    const alarmActive=
-      alarms.active===true||
-      temperatureAlarm.active===true||
-      sensorAlarm.active===true;
+    const tempAlarm=alarm.temperature||{};
+    const sensorAlarm=alarm.sensor||{};
+    const alarmActive=tempAlarm.active===true||sensorAlarm.active===true||(Array.isArray(data.alarms)&&data.alarms.length>0);
 
     $('alarm-notice').classList.toggle('hidden',!alarmActive);
 
     if(alarmActive){
-      const text=
-        alarms.text||
-        alarms.alarmText||
-        (sensorAlarm.active?
-          `${sensorAlarm.triggerRole||'Sensor'}: ${sensorAlarm.triggerReason||'Fehler'}`:
-          'Temperaturalarm aktiv');
-      $('alarm-text').textContent=text;
+      $('alarm-text').textContent=
+        Array.isArray(data.alarms)&&data.alarms.length?
+          data.alarms.join(', '):
+          sensorAlarm.active?
+            `${sensorAlarm.triggerRole||'Sensor'}: ${sensorAlarm.triggerReason||'Fehler'}`:
+            'Temperaturalarm aktiv';
     }
 
     drawChart(state.history);
+  }
+
+  function render() {
+    renderTabs();
+
+    if(selectedId===ARCHIVE_TAB||(!selectedId&&devices.length===0)){
+      selectedId=ARCHIVE_TAB;
+      renderTabs();
+      renderArchive();
+      return;
+    }
+
+    renderFermenter();
   }
 
   function drawChart(points) {
@@ -867,35 +955,38 @@
   $('reset-config').onclick=()=>{
     localStorage.removeItem(CONFIG_KEY);
     localStorage.removeItem(LEGACY_CONFIG_KEY);
-    localStorage.removeItem(DEVICE_CACHE_KEY);
+    localStorage.removeItem(LEGACY_DEVICE_CACHE_KEY);
     location.reload();
   };
 
   $('ack-alarm').onclick=()=>publishExternal('alarm/acknowledge',{});
 
   $('setpoint-send').onclick=()=>{
-    const value=Number($('setpoint-input').value);
-    if(Number.isFinite(value)){
+    const value=finite($('setpoint-input').value);
+    if(value!==null){
       publishExternal('setpoint',{value});
       $('setpoint-input').value='';
     }
   };
 
   document.querySelectorAll('[data-mode]').forEach(button=>{
-    button.onclick=()=>publishExternal('mode',{value:button.dataset.mode});
+    button.onclick=()=>{
+      const value=button.dataset.mode==='temp'?'temperature':button.dataset.mode;
+      publishExternal('mode',{value});
+    };
   });
 
   $('status-request').onclick=()=>publishExternal('status',{});
 
   $('profile-select').onchange=event=>{
     if(event.target.value!==''){
-      publishExternal('profile/select',{profile_id:Number(event.target.value)});
+      publishExternal('profile/select',{profileId:Number(event.target.value)});
     }
   };
 
   $('profile-start').onclick=()=>{
     const value=$('profile-select').value;
-    publishExternal('profile/start',value!==''?{profile_id:Number(value)}:{});
+    publishExternal('profile/start',value!==''?{profileId:Number(value)}:{});
   };
 
   $('profile-stop').onclick=()=>publishExternal('profile/stop',{});
