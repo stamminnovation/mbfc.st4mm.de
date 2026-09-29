@@ -106,20 +106,20 @@
   <div id="settings-modal" class="modal-backdrop hidden">
     <div class="modal">
       <div class="modal-head"><h2>Verbindung konfigurieren</h2><button id="close-settings" class="icon-button">×</button></div>
-      <label>MQTT WebSocket URL<input id="broker-url" placeholder="wss://mqtt.example.com:8084/mqtt"></label>
+      <label>HiveMQ Brokerkennung / Cluster-Host<input id="broker-host" placeholder="xxxxxxxx.s1.eu.hivemq.cloud" autocapitalize="none" autocomplete="off"></label>
       <div class="form-grid">
-        <label>Benutzername<input id="broker-user" autocomplete="username"></label>
-        <label>Passwort<input id="broker-password" type="password" autocomplete="current-password"></label>
+        <label>MQTT Benutzername<input id="broker-user" autocomplete="username"></label>
+        <label>MQTT Passwort<input id="broker-password" type="password" autocomplete="current-password"></label>
       </div>
+      <p class="hint">Die App verbindet sich automatisch per <code>wss://&lt;Brokerkennung&gt;:8884/mqtt</code>.</p>
       <p class="hint">Die Zugangsdaten werden nur in diesem Browser gespeichert. Für produktiven Betrieb einen eigenen MQTT-Benutzer mit engen ACLs verwenden.</p>
       <div class="button-row">
         <button id="import-credentials" class="secondary" type="button">Credentials importieren</button>
         <input id="credentials-file" class="hidden" type="file" accept=".json,application/json">
       </div>
       <p id="credentials-import-status" class="hint hidden" role="status"></p>
-      <h3>Fermenter</h3>
-      <div id="device-editor-list"></div>
-      <button id="add-device" class="secondary">+ Fermenter hinzufügen</button>
+      <h3>Fermenter-Erkennung</h3>
+      <p class="hint">Alle Fermenter werden automatisch über <code>riprapt/+/out/#</code> erkannt. Der Command-Topic wird aus der gefundenen ID automatisch als <code>riprapt/&lt;ID&gt;/in</code> gebildet.</p>
       <div class="modal-actions"><button id="reset-config" class="ghost danger">Lokale Konfiguration löschen</button><button id="save-settings">Speichern & verbinden</button></div>
     </div>
   </div>
