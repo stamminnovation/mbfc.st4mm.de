@@ -6,7 +6,8 @@ Statische Remote-Weboberfläche für den R.I.P. - RAPT Fermentercontroller. Die 
 
 - vorgeschaltete Kennwortabfrage für GitHub Pages
 - MQTT over WebSockets (`wss://`)
-- mehrere Fermenter
+- automatische Erkennung aller Fermenter am freigegebenen HiveMQ-Broker
+- mehrere Fermenter ohne manuelle Geräteliste
 - Availability Online/Offline
 - Temperatur, Sollwert, Stellgröße, HEAT/COOL
 - PID/Fuzzy-Anzeige
@@ -62,48 +63,57 @@ topic write riprapt/+/in
 
 Unter **Verbindung → Credentials importieren** kann eine lokale JSON-Datei eingelesen werden. Die Datei wird ausschließlich im Browser gelesen und nicht auf GitHub oder einen anderen Server hochgeladen.
 
-Format Version 1:
+Aktuelles Format Version 2:
 
 ```json
 {
   "format": "riprapt-remote-credentials",
-  "version": 1,
+  "version": 2,
   "broker": {
-    "url": "wss://mqtt.example.com/mqtt",
+    "host": "xxxxxxxx.s1.eu.hivemq.cloud",
     "username": "riprapt-web",
     "password": "CHANGE_ME"
-  },
-  "devices": [
-    {
-      "id": "F01",
-      "name": "Fermentor F01",
-      "inputTopic": "riprapt/F01/in",
-      "outputRoot": "riprapt/F01/out"
-    }
-  ]
+  }
 }
 ```
 
-Der Import prüft Format, Version, Broker-URL, eindeutige Fermenter-IDs und MQTT-Topics. Über eine per HTTPS ausgelieferte GitHub Page wird nur `wss://` akzeptiert. MQTT-Wildcards (`#`, `+`) sind in den konfigurierten Geräte-Topics nicht zulässig.
+`broker.host` ist die HiveMQ-Cloud-Brokerkennung beziehungsweise der Cluster-Host. Die WebApp bildet daraus automatisch:
+
+```text
+wss://<broker.host>:8884/mqtt
+```
+
+Version-1-Credentials mit einer vollständigen `broker.url` werden weiterhin akzeptiert und beim Import auf das neue Format migriert.
 
 Nach erfolgreichem Import werden die Werte zunächst nur im Einstellungsdialog angezeigt. Erst **Speichern & verbinden** übernimmt sie in den lokalen Browser-Speicher und baut die MQTT-Verbindung neu auf.
 
 **Sicherheit:** Die Credentials-Datei enthält das MQTT-Passwort im Klartext und muss entsprechend geschützt aufbewahrt werden. Das Seitenkennwort und das MQTT-Kennwort sollten unterschiedlich sein.
 
+### Automatische Fermenter-Erkennung
+
+Nach erfolgreicher HiveMQ-Verbindung abonniert die App genau:
+
+```text
+riprapt/+/out/#
+```
+
+Jede empfangene Topic-Struktur
+
+```text
+riprapt/<fermentor-id>/out/<suffix>
+```
+
+legt automatisch einen Fermenter `<fermentor-id>` in der Oberfläche an. Für Steuerbefehle wird automatisch folgender Topic erzeugt:
+
+```text
+riprapt/<fermentor-id>/in
+```
+
+Eine manuelle Fermenterliste oder Geräte-Topics im Credentials-Import sind daher nicht mehr erforderlich. Zuletzt erkannte IDs werden nur lokal im Browser zwischengespeichert, damit die Tabs nach einem Reload sofort wieder sichtbar sind. Der tatsächliche Zustand kommt weiterhin ausschließlich aus MQTT-Telemetrie.
+
 ## MQTT
 
-Im Einstellungsdialog wird eine vollständige WebSocket-URL eingetragen, z. B.:
-
-```text
-wss://mqtt.example.com/mqtt
-```
-
-Pro Fermenter werden Input-Topic und Output-Root konfiguriert:
-
-```text
-Input:       riprapt/F01/in
-Output Root: riprapt/F01/out
-```
+Im Einstellungsdialog werden HiveMQ-Brokerkennung/Cluster-Host, MQTT-Benutzername und MQTT-Passwort eingetragen. Für HiveMQ Cloud verwendet die App automatisch sicheren WebSocket-Zugriff über Port `8884` und den Pfad `/mqtt`.
 
 Die App verwendet die retained Topics `/status`, `/network`, `/control`, `/profile`, `/profiles/index`, `/alarm`, `/availability` und `/ack`. Kommandos werden nicht retained auf das Input-Topic publiziert.
 
