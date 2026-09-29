@@ -1,0 +1,64 @@
+name: Deploy R.I.P. Remote to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Generate client-side authentication hash
+        env:
+          SITE_PASSWORD: ${{ secrets.RIPRAPT_REMOTE_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import secrets
+          from pathlib import Path
+
+          password = os.environ.get("SITE_PASSWORD", "")
+          if not password:
+              raise SystemExit("Missing repository secret RIPRAPT_REMOTE_PASSWORD")
+
+          iterations = 310000
+          salt = secrets.token_bytes(16)
+          digest = hashlib.pbkdf2_hmac(
+              "sha256", password.encode("utf-8"), salt, iterations, dklen=32
+          )
+          config = {
+              "iterations": iterations,
+              "salt": salt.hex(),
+              "hash": digest.hex(),
+          }
+          Path("web/auth-config.js").write_text(
+              "window.RIPRAPT_AUTH_CONFIG = " + json.dumps(config) + ";\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      - name: Upload static site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: web
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
