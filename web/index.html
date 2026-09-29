@@ -100,6 +100,22 @@
         <details><summary>Letzte MQTT-Quittierung</summary><pre id="last-ack">—</pre></details>
       </article>
     </section>
+    <section id="profile-archive-view" class="card hidden">
+      <div class="card-head">
+        <div>
+          <div class="eyebrow">FERMENTCONTROL</div>
+          <h2>Profilarchiv</h2>
+        </div>
+        <span id="archive-count" class="pill">0 Profile</span>
+      </div>
+      <div class="stats-card archive-stats">
+        <div><span>Ausgewähltes Profil</span><strong id="archive-selected">—</strong></div>
+        <div><span>Ziel-Fermenter</span><strong id="archive-target">—</strong></div>
+      </div>
+      <div id="archive-profile-list" class="archive-list"></div>
+      <p class="hint">Das Profilarchiv wird direkt aus FermentControl External MQTT geladen.</p>
+    </section>
+
     <footer>R.I.P. Remote · statische WebApp · MQTT over WebSockets</footer>
   </main>
 
