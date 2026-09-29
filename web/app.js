@@ -239,6 +239,78 @@
     return days?`${days}d ${hours}h ${minutes}m`:`${hours}h ${minutes}m`;
   };
 
+  function calculateProfileProgress(profile){
+    if(!profile||typeof profile!=='object')return null;
+
+    const published=finite(profile.progressPercent);
+    if(published!==null){
+      return Math.min(100,Math.max(0,Math.round(published*10)/10));
+    }
+
+    const steps=finite(profile.steps);
+    if(steps===null||steps<=0)return null;
+    if(profile.complete===true)return 100;
+    if(profile.active!==true)return 0;
+
+    const rawStep=finite(profile.step);
+    const step=rawStep===null?1:Math.min(Math.max(Math.trunc(rawStep),1),Math.trunc(steps));
+    let withinStep=0;
+
+    const elapsed=finite(profile.elapsedSeconds);
+    const remaining=finite(profile.remainingSeconds);
+    const timeBased=!profile.advanceMode||profile.advanceMode==='time';
+
+    if(
+      timeBased
+      && elapsed!==null
+      && remaining!==null
+      && elapsed>=0
+      && remaining>=0
+      && elapsed+remaining>0
+    ){
+      withinStep=Math.min(1,Math.max(0,elapsed/(elapsed+remaining)));
+    }
+
+    return Math.min(
+      100,
+      Math.max(0,Math.round((((step-1)+withinStep)/steps)*1000)/10)
+    );
+  }
+
+  function renderProfileProgress(profile){
+    const panel=$('profile-progress-panel');
+    const track=panel.querySelector('.profile-progress-track');
+    const bar=$('profile-progress-bar');
+    const value=$('profile-progress-value');
+    const note=$('profile-progress-note');
+    const progress=calculateProfileProgress(profile);
+
+    const visible=progress!==null&&(profile?.active===true||profile?.complete===true);
+    panel.classList.toggle('hidden',!visible);
+
+    if(!visible){
+      bar.style.width='0%';
+      value.textContent='0,0 %';
+      note.textContent='';
+      track.setAttribute('aria-valuenow','0');
+      return;
+    }
+
+    bar.style.width=`${progress}%`;
+    value.textContent=`${progress.toFixed(1).replace('.',',')} %`;
+    track.setAttribute('aria-valuenow',String(progress));
+
+    if(profile.complete===true){
+      note.textContent='Profil abgeschlossen';
+    }else if(profile.advanceMode&&profile.advanceMode!=='time'){
+      note.textContent='Aktueller Schritt endet nach Profilbedingung; kein fiktiver Zeitfortschritt.';
+    }else if(finite(profile.remainingSeconds)!==null&&finite(profile.remainingSeconds)>0){
+      note.textContent=`Restzeit aktueller Schritt: ${duration(profile.remainingSeconds)}`;
+    }else{
+      note.textContent='';
+    }
+  }
+
   let config=loadConfig();
   let settingsDraft=null;
   let devices=[];
@@ -725,6 +797,7 @@
     $('profile-name').textContent='Keine aktuellen Fermenter';
     $('profile-step').textContent='Schritt 0 / 0';
     $('profile-remaining').textContent='—';
+    renderProfileProgress(null);
     $('profile-flags').innerHTML='';
     $('profile-select').innerHTML='<option value="">Profil wählen</option>';
     ['hostname','ip','rssi','mac','firmware','last-message','last-ack'].forEach(id=>$(id).textContent='—');
@@ -770,6 +843,7 @@
     $('profile-name').textContent=profile.name||'Kein Profil gewählt';
     $('profile-step').textContent=`Schritt ${profile.step??0} / ${profile.steps??0}`;
     $('profile-remaining').textContent=duration(profile.remainingSeconds);
+    renderProfileProgress(profile);
 
     const flags=$('profile-flags');
     flags.innerHTML='';
