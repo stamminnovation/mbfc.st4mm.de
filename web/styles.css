@@ -8,3 +8,10 @@
 .archive-item strong{display:block}
 .archive-item span{color:#8fa0aa;font-size:.82rem}
 @media(max-width:620px){.archive-stats{grid-template-columns:1fr}.archive-item{grid-template-columns:1fr}}
+
+.profile-progress-panel{margin:0 0 16px;padding:12px;border:1px solid #2d483b;border-radius:12px;background:rgba(18,61,43,.18)}
+.profile-progress-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px;color:#8fa0aa;font-size:.8rem}
+.profile-progress-head strong{color:#76e3ad;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.95rem}
+.profile-progress-track{height:10px;overflow:hidden;border-radius:999px;background:#2a3138}
+.profile-progress-bar{height:100%;width:0;border-radius:999px;background:#76e3ad;transition:width .5s ease}
+.profile-progress-note{margin-top:8px;color:#778791;font-size:.72rem;min-height:1em}
