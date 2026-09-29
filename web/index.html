@@ -119,7 +119,7 @@
       </div>
       <p id="credentials-import-status" class="hint hidden" role="status"></p>
       <h3>Fermenter-Erkennung</h3>
-      <p class="hint">Alle Fermenter werden automatisch über <code>riprapt/+/out/#</code> erkannt. Der Command-Topic wird aus der gefundenen ID automatisch als <code>riprapt/&lt;ID&gt;/in</code> gebildet.</p>
+      <p class="hint">Alle Fermenter werden automatisch über FermentControl External MQTT erkannt. Die App liest <code>fermentorcontrol/+/state</code> und sendet Befehle über <code>fermentorcontrol/&lt;ID&gt;/command/...</code>.</p>
       <div class="modal-actions"><button id="reset-config" class="ghost danger">Lokale Konfiguration löschen</button><button id="save-settings">Speichern & verbinden</button></div>
     </div>
   </div>
