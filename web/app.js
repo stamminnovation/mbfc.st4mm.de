@@ -946,7 +946,7 @@
     $('overview-count').textContent=`${devices.length} Fermenter · ${live?online:0} online`;
     $('overview-note').textContent=!live
       ? 'Verbindung unterbrochen – angezeigte Werte sind der letzte bekannte Stand.'
-      : hasDeviceRegistry?'Aktuelle Geräteliste aus Fermentor Control.':'Geräteliste aus Profilarchiv; für unabhängige Erkennung Fermentor Control aktualisieren.';
+      : hasDeviceRegistry?'Aktuelle Geräteliste aus Fermenter Control.':'Geräteliste aus Profilarchiv; für unabhängige Erkennung Fermenter Control aktualisieren.';
     const grid=$('overview-grid');
     grid.innerHTML='';
     $('overview-empty').classList.toggle('hidden',devices.length>0);

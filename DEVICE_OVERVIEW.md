@@ -12,17 +12,17 @@ bleibt über die Karte und die Navigation erreichbar.
   entfernt alle Geräte aus der Anzeige. Einzelzustände unbekannter Geräte
   fügen kein Gerät hinzu; alte retained Zustände erzeugen daher keine Geistergeräte.
 - Neue Live-MQTT-Meldungen eines entfernten Controllers registrieren ihn im
-  Fermentor-Control-Backend wieder. Dessen neue Geräteliste fügt ihn in MBFC hinzu.
+  Fermenter-Control-Backend wieder. Dessen neue Geräteliste fügt ihn in MBFC hinzu.
 - Die browserlokalen Kurzzeitverläufe bleiben beim Entfernen erhalten und werden
   beim Wiederauftauchen geladen. Das vollständige Chargenarchiv liegt weiterhin
-  in der MongoDB von Fermentor Control.
+  in der MongoDB von Fermenter Control.
 - Ohne das neue Gerätelist-Topic dienen die bisherigen Profilarchiv-Targets als
   Übergangslösung. Nach Empfang der Geräteliste können alte Archiv-Targets die
   aktive Liste nicht überschreiben. Die neue Liste benötigt kein Profil-Leserecht.
 - Der MBFC-MQTT-Benutzer benötigt Subscribe-Rechte für `fermentercontrol/devices`
   sowie die bereits verwendeten Zustands-, Availability- und Profiltopics.
 
-MBFC bleibt auf GitHub Pages. Fermentor Control läuft auf dem Raspberry Pi.
+MBFC bleibt auf GitHub Pages. Fermenter Control läuft auf dem Raspberry Pi.
 Die GitHub-Pages-Veröffentlichung erfolgt über den vorhandenen Workflow nach
 Übernahme der Änderungen in `main`. Es werden keine Brokerzugangsdaten eingecheckt.
 
