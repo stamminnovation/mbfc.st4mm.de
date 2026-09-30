@@ -5,9 +5,11 @@
   const LEGACY_CONFIG_KEY='riprapt-remote-config-v1';
   const LEGACY_DEVICE_CACHE_KEY='riprapt-remote-device-cache-v2';
   const HISTORY_PREFIX='riprapt-remote-history-v1:';
+  const OVERVIEW_TAB='__overview__';
   const ARCHIVE_TAB='__profile_archive__';
 
   const TOPICS={
+    devices:'fermentorcontrol/devices',
     globalAvailability:'fermentorcontrol/availability',
     archiveState:'fermentorcontrol/profile-archive/state'
   };
@@ -314,7 +316,8 @@
   let config=loadConfig();
   let settingsDraft=null;
   let devices=[];
-  let selectedId='';
+  let selectedId=OVERVIEW_TAB;
+  let hasDeviceRegistry=false;
   let states={};
   let archiveState={count:0,profiles:[],targets:[]};
   let client=null;
@@ -538,8 +541,8 @@
     states=nextStates;
     devices=clean;
 
-    if(selectedId!==ARCHIVE_TAB&&!nextIds.has(selectedId)){
-      selectedId=devices[0]?.id||ARCHIVE_TAB;
+    if(selectedId!==OVERVIEW_TAB&&selectedId!==ARCHIVE_TAB&&!nextIds.has(selectedId)){
+      selectedId=OVERVIEW_TAB;
     }
 
     renderTabs();
@@ -568,9 +571,23 @@
   }
 
   function handleMessage(topic,payload) {
+    if(topic===TOPICS.devices){
+      const parsed=safeJson(payload);
+      if(parsed?.schemaVersion!==1||!Array.isArray(parsed.devices)||
+          parsed.devices.some(device=>!device||typeof device.id!=='string'||
+            !/^[A-Za-z0-9_-]{1,48}$/.test(device.id)||typeof device.online!=='boolean')||
+          new Set(parsed.devices.map(device=>device.id)).size!==parsed.devices.length){
+        setError('Ungültige Fermenterliste empfangen; bisherige Liste bleibt erhalten.');
+        return;
+      }
+      hasDeviceRegistry=true;
+      syncCurrentDevices(parsed.devices);
+      return;
+    }
     if(topic===TOPICS.globalAvailability){
       fermentControlOnline=payload==='online';
       updateBrokerPill();
+      render();
       return;
     }
 
@@ -582,7 +599,8 @@
       }
 
       archiveState=parsed;
-      syncCurrentDevices(parsed.targets);
+      if(!hasDeviceRegistry)syncCurrentDevices(parsed.targets);
+      else render();
       return;
     }
 
@@ -615,7 +633,7 @@
       state.lastCommandResult=payload;
     }
 
-    if(selectedId===id)render();
+    if(selectedId===id||selectedId===OVERVIEW_TAB)render();
     else renderTabs();
   }
 
@@ -631,7 +649,8 @@
     devices=[];
     states={};
     archiveState={count:0,profiles:[],targets:[]};
-    selectedId='';
+    selectedId=OVERVIEW_TAB;
+    hasDeviceRegistry=false;
 
     updateBrokerPill();
     setError('');
@@ -658,6 +677,7 @@
 
         try{
           client.subscribe(TOPICS.globalAvailability);
+          client.subscribe(TOPICS.devices);
           client.subscribe(TOPICS.archiveState);
         }catch(error){
           setError(String(error));
@@ -670,6 +690,7 @@
         fermentControlOnline=false;
         subscribedDeviceIds.clear();
         updateBrokerPill();
+        render();
       },
       error:error=>setError('MQTT: '+(error?.message||error)),
       suback:(topic,codes)=>{
@@ -708,6 +729,11 @@
   function renderTabs() {
     const box=$('device-tabs');
     box.innerHTML='';
+    const overview=document.createElement('button');
+    overview.textContent=`Fermenterübersicht (${devices.length})`;
+    overview.className=selectedId===OVERVIEW_TAB?'active':'';
+    overview.onclick=()=>{selectedId=OVERVIEW_TAB;render();};
+    box.appendChild(overview);
 
     for(const device of devices){
       const button=document.createElement('button');
@@ -731,6 +757,7 @@
   }
 
   function setView(archive) {
+    $('fermenter-overview').classList.add('hidden');
     document.querySelectorAll('.hero-grid,.content-grid').forEach(element=>{
       element.classList.toggle('hidden',archive);
     });
@@ -909,8 +936,53 @@
     drawChart(state.history);
   }
 
+  function renderOverview() {
+    setView(true);
+    $('profile-archive-view').classList.add('hidden');
+    $('fermenter-overview').classList.remove('hidden');
+    $('alarm-notice').classList.add('hidden');
+    const live=brokerConnected&&fermentControlOnline;
+    const online=devices.filter(device=>device.online).length;
+    $('overview-count').textContent=`${devices.length} Fermenter · ${live?online:0} online`;
+    $('overview-note').textContent=!live
+      ? 'Verbindung unterbrochen – angezeigte Werte sind der letzte bekannte Stand.'
+      : hasDeviceRegistry?'Aktuelle Geräteliste aus Fermentor Control.':'Geräteliste aus Profilarchiv; für unabhängige Erkennung Fermentor Control aktualisieren.';
+    const grid=$('overview-grid');
+    grid.innerHTML='';
+    $('overview-empty').classList.toggle('hidden',devices.length>0);
+    for(const device of devices){
+      const data=states[device.id]?.publicState;
+      const card=document.createElement('article');
+      card.className='card overview-card';
+      const title=document.createElement('h3');title.textContent=device.name;
+      const id=document.createElement('p');id.className='hint';id.textContent=device.id;
+      const status=document.createElement('span');
+      status.className='pill '+(live&&device.online?'good':'bad');
+      status.textContent=live?(device.online?'ONLINE':'OFFLINE'):'VERBINDUNG FEHLT';
+      card.append(title,id,status);
+      const readings=document.createElement('dl');readings.className='details';
+      const alarm=data?.alarm;
+      const rows=[
+        ['Temperatur',data?.temperature?.valid?fmt(data.temperature.beerC,1,' °C'):'—'],
+        ['Sollwert',fmt(data?.temperature?.setpointC,1,' °C')],
+        ['Dichte',data?.gravity?.valid?fmt(data.gravity.sg,5):'—'],
+        ['Modus',data?.control?.mode||'—'],
+        ['Profil',data?.profile?.name||'—'],
+        ['Alarm',alarm?(alarm.temperature?.active||alarm.sensor?.active?'Aktiv':'Keiner'):'—'],
+      ];
+      for(const [label,value] of rows){
+        const row=document.createElement('div'),dt=document.createElement('dt'),dd=document.createElement('dd');
+        dt.textContent=label;dd.textContent=value;row.append(dt,dd);readings.appendChild(row);
+      }
+      const open=document.createElement('button');open.className='secondary full';open.textContent='Details öffnen';
+      open.onclick=()=>{selectedId=device.id;render();};
+      card.append(readings,open);grid.appendChild(card);
+    }
+  }
+
   function render() {
     renderTabs();
+    if(selectedId===OVERVIEW_TAB){renderOverview();return;}
 
     if(selectedId===ARCHIVE_TAB||(!selectedId&&devices.length===0)){
       selectedId=ARCHIVE_TAB;
@@ -1068,3 +1140,4 @@
   render();
   connect();
 })();
+

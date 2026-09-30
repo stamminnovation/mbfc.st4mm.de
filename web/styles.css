@@ -15,3 +15,7 @@
 .profile-progress-track{height:10px;overflow:hidden;border-radius:999px;background:#2a3138}
 .profile-progress-bar{height:100%;width:0;border-radius:999px;background:#76e3ad;transition:width .5s ease}
 .profile-progress-note{margin-top:8px;color:#778791;font-size:.72rem;min-height:1em}
+
+
+.overview-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px;margin-bottom:20px}
+.overview-card{min-width:0;overflow-wrap:anywhere}.overview-card h3{margin-bottom:4px}.overview-card .details{margin-top:18px}
