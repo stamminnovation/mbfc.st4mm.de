@@ -6,7 +6,7 @@ bleibt über die Karte und die Navigation erreichbar.
 
 ## MQTT-Vertrag
 
-- `fermentorcontrol/devices` (retained):
+- `fermentercontrol/devices` (retained):
   `{ "schemaVersion": 1, "devices": [{ "id": "F01", "name": "F01", "online": true }] }`
 - Die Liste ist maßgeblich für Navigation und Übersicht. Eine leere Liste
   entfernt alle Geräte aus der Anzeige. Einzelzustände unbekannter Geräte
@@ -19,7 +19,7 @@ bleibt über die Karte und die Navigation erreichbar.
 - Ohne das neue Gerätelist-Topic dienen die bisherigen Profilarchiv-Targets als
   Übergangslösung. Nach Empfang der Geräteliste können alte Archiv-Targets die
   aktive Liste nicht überschreiben. Die neue Liste benötigt kein Profil-Leserecht.
-- Der MBFC-MQTT-Benutzer benötigt Subscribe-Rechte für `fermentorcontrol/devices`
+- Der MBFC-MQTT-Benutzer benötigt Subscribe-Rechte für `fermentercontrol/devices`
   sowie die bereits verwendeten Zustands-, Availability- und Profiltopics.
 
 MBFC bleibt auf GitHub Pages. Fermentor Control läuft auf dem Raspberry Pi.
@@ -27,3 +27,10 @@ Die GitHub-Pages-Veröffentlichung erfolgt über den vorhandenen Workflow nach
 Übernahme der Änderungen in `main`. Es werden keine Brokerzugangsdaten eingecheckt.
 
 Prüfung: `node --check web/app.js` und `node --test tests/*.test.cjs`.
+
+## Topic-Umstellung
+
+Neues Basistopic: `fermentercontrol`. Vor Veröffentlichung dieser MBFC-Version
+das Basistopic in Fermenter Control und die Broker-ACLs entsprechend umstellen.
+Bereits gespeicherte Backend-Konfiguration hat Vorrang vor `.env`-Defaults.
+Die internen Controller-Topics `riprapt/...` bleiben bestehen.

@@ -26,7 +26,7 @@ function app() {
 
 test('authoritative list removes stale devices, preserves history, and restores returning devices',()=>{
   const {api,element,storage}=app();
-  const send=(topic,value)=>api.handleMessage('fermentorcontrol/'+topic,JSON.stringify(value));
+  const send=(topic,value)=>api.handleMessage('fermentercontrol/'+topic,JSON.stringify(value));
   const registry=devices=>send('devices',{schemaVersion:1,devices});
   const device={id:'F01',name:'Tank 1',online:true};
   registry([device]);
@@ -48,14 +48,14 @@ test('authoritative list removes stale devices, preserves history, and restores 
 test('archive fallback works until valid registry arrives; malformed lists keep current devices',()=>{
   const {api,element}=app();
   const device={id:'F02',name:'<img src=x>',online:true};
-  api.handleMessage('fermentorcontrol/profile-archive/state',JSON.stringify({targets:[device]}));
+  api.handleMessage('fermentercontrol/profile-archive/state',JSON.stringify({targets:[device]}));
   assert.equal(api.snapshot().devices.length,1);
-  api.handleMessage('fermentorcontrol/devices',JSON.stringify({schemaVersion:1,devices:[device]}));
+  api.handleMessage('fermentercontrol/devices',JSON.stringify({schemaVersion:1,devices:[device]}));
   assert.equal(element('overview-grid').children[0].children[0].textContent,'<img src=x>');
-  api.handleMessage('fermentorcontrol/devices',JSON.stringify({schemaVersion:1,devices:[{id:'bad/ID'}]}));
+  api.handleMessage('fermentercontrol/devices',JSON.stringify({schemaVersion:1,devices:[{id:'bad/ID'}]}));
   assert.equal(api.snapshot().devices[0].id,'F02');
   api.online();
   assert.match(element('overview-count').textContent,/1 online/);
-  api.handleMessage('fermentorcontrol/availability','offline');
+  api.handleMessage('fermentercontrol/availability','offline');
   assert.match(element('overview-count').textContent,/0 online/);
 });

@@ -9,9 +9,9 @@
   const ARCHIVE_TAB='__profile_archive__';
 
   const TOPICS={
-    devices:'fermentorcontrol/devices',
-    globalAvailability:'fermentorcontrol/availability',
-    archiveState:'fermentorcontrol/profile-archive/state'
+    devices:'fermentercontrol/devices',
+    globalAvailability:'fermentercontrol/availability',
+    archiveState:'fermentercontrol/profile-archive/state'
   };
 
   const defaultConfig={broker:{host:'',username:'',password:''}};
@@ -495,7 +495,7 @@
   }
 
   function topicsForDevice(id) {
-    const root=`fermentorcontrol/${id}`;
+    const root=`fermentercontrol/${id}`;
     return[
       `${root}/state`,
       `${root}/availability`,
@@ -604,7 +604,7 @@
       return;
     }
 
-    const match=topic.match(/^fermentorcontrol\/([^/]+)\/(state|availability|profiles|command_result)$/);
+    const match=topic.match(/^fermentercontrol\/([^/]+)\/(state|availability|profiles|command_result)$/);
     if(!match)return;
 
     const id=match[1];
@@ -721,7 +721,7 @@
     }
 
     client.publish(
-      `fermentorcontrol/${device.id}/command/${path}`,
+      `fermentercontrol/${device.id}/command/${path}`,
       JSON.stringify({id:crypto.randomUUID(),...payload})
     );
   }
