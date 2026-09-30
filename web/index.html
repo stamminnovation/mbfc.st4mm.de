@@ -40,6 +40,13 @@
 
     <nav id="device-tabs" class="device-tabs"></nav>
 
+    <section id="fermenter-overview" aria-labelledby="overview-title">
+      <div class="card-head"><h2 id="overview-title">Fermenterübersicht</h2><span id="overview-count" class="pill">0 Fermenter</span></div>
+      <p id="overview-note" class="hint" role="status"></p>
+      <p id="overview-empty" class="card">Noch keine Fermenter gemeldet. Die Liste erscheint automatisch nach der Verbindung mit Fermentor Control.</p>
+      <div id="overview-grid" class="overview-grid"></div>
+    </section>
+
     <section class="hero-grid">
       <article class="card hero-card">
         <div class="card-head"><span>Prozesstemperatur</span><span id="availability" class="status-dot offline">UNKNOWN</span></div>
@@ -142,7 +149,7 @@
       </div>
       <p id="credentials-import-status" class="hint hidden" role="status"></p>
       <h3>Fermenter-Erkennung</h3>
-      <p class="hint">Alle Fermenter werden automatisch über FermentControl External MQTT erkannt. Die App liest <code>fermentorcontrol/+/state</code> und sendet Befehle über <code>fermentorcontrol/&lt;ID&gt;/command/...</code>.</p>
+      <p class="hint">Alle Fermenter werden automatisch über FermentControl External MQTT erkannt. Die Geräteliste kommt aus <code>fermentorcontrol/devices</code>. Die App liest die zugehörigen <code>fermentorcontrol/&lt;ID&gt;/state</code> und sendet Befehle über <code>fermentorcontrol/&lt;ID&gt;/command/...</code>.</p>
       <div class="modal-actions"><button id="reset-config" class="ghost danger">Lokale Konfiguration löschen</button><button id="save-settings">Speichern & verbinden</button></div>
     </div>
   </div>
@@ -151,3 +158,4 @@
   <script src="./auth.js"></script>
 </body>
 </html>
+
