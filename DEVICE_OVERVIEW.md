@@ -16,9 +16,10 @@ bleibt über die Karte und die Navigation erreichbar.
 - Die browserlokalen Kurzzeitverläufe bleiben beim Entfernen erhalten und werden
   beim Wiederauftauchen geladen. Das vollständige Chargenarchiv liegt weiterhin
   in der MongoDB von Fermentor Control.
-- Ohne das neue Gerätelist-Topic dienen die bisherigen Profilarchiv-Targets als
-  Übergangslösung. Nach Empfang der Geräteliste können alte Archiv-Targets die
-  aktive Liste nicht überschreiben. Die neue Liste benötigt kein Profil-Leserecht.
+- Profilarchiv-Targets werden nie als aktive Geräteliste verwendet: alte retained
+  Archivdaten können entfernte Geräte enthalten. Bis zur gültigen Geräteliste
+  bleibt die Übersicht leer und zeigt einen Hinweis. Das gilt auch nach einem
+  MQTT-Reconnect. Die Geräteliste benötigt kein Profil-Leserecht.
 - Der MBFC-MQTT-Benutzer benötigt Subscribe-Rechte für `fermentorcontrol/devices`
   sowie die bereits verwendeten Zustands-, Availability- und Profiltopics.
 

@@ -45,11 +45,13 @@ test('authoritative list removes stale devices, preserves history, and restores 
   assert.equal(element('overview-grid').children.length,1);
 });
 
-test('archive fallback works until valid registry arrives; malformed lists keep current devices',()=>{
+test('archive targets never populate overview; malformed lists keep current devices',()=>{
   const {api,element}=app();
   const device={id:'F02',name:'<img src=x>',online:true};
   api.handleMessage('fermentorcontrol/profile-archive/state',JSON.stringify({targets:[device]}));
-  assert.equal(api.snapshot().devices.length,1);
+  assert.equal(api.snapshot().devices.length,0);
+  assert.equal(element('overview-grid').children.length,0);
+  assert.match(element('overview-note').textContent,/Warte auf aktuelle Geräteliste/);
   api.handleMessage('fermentorcontrol/devices',JSON.stringify({schemaVersion:1,devices:[device]}));
   assert.equal(element('overview-grid').children[0].children[0].textContent,'<img src=x>');
   api.handleMessage('fermentorcontrol/devices',JSON.stringify({schemaVersion:1,devices:[{id:'bad/ID'}]}));
@@ -58,4 +60,19 @@ test('archive fallback works until valid registry arrives; malformed lists keep 
   assert.match(element('overview-count').textContent,/1 online/);
   api.handleMessage('fermentorcontrol/availability','offline');
   assert.match(element('overview-count').textContent,/0 online/);
+});
+
+test('removed F99 stays absent despite stale archive targets and individual state',()=>{
+  const {api,element}=app();
+  const stale={id:'F99',name:'F99',online:true};
+  const archive=()=>api.handleMessage('fermentorcontrol/profile-archive/state',JSON.stringify({targets:[stale]}));
+  archive();
+  assert.equal(element('overview-grid').children.length,0);
+  api.handleMessage('fermentorcontrol/devices',JSON.stringify({schemaVersion:1,devices:[{id:'F01',name:'F01',online:true}]}));
+  archive();
+  api.handleMessage('fermentorcontrol/F99/state',JSON.stringify({name:'F99',connectionStatus:'online'}));
+  assert.equal(api.snapshot().devices.length,1);
+  assert.equal(api.snapshot().devices[0].id,'F01');
+  assert.equal(api.snapshot().states.F99,undefined);
+  assert.equal(element('overview-grid').children.length,1);
 });

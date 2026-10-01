@@ -599,8 +599,8 @@
       }
 
       archiveState=parsed;
-      if(!hasDeviceRegistry)syncCurrentDevices(parsed.targets);
-      else render();
+      // Archive targets may be stale retained data, not current membership.
+      render();
       return;
     }
 
@@ -672,6 +672,9 @@
     client=new MiniMqtt({
       connect:()=>{
         brokerConnected=true;
+        // Each MQTT session must receive its own authoritative snapshot.
+        hasDeviceRegistry=false;
+        syncCurrentDevices([]);
         updateBrokerPill();
         setError('');
 
@@ -944,9 +947,11 @@
     const live=brokerConnected&&fermentControlOnline;
     const online=devices.filter(device=>device.online).length;
     $('overview-count').textContent=`${devices.length} Fermenter · ${live?online:0} online`;
-    $('overview-note').textContent=!live
+    $('overview-note').textContent=!hasDeviceRegistry
+      ? 'Warte auf aktuelle Geräteliste (fermentorcontrol/devices). Bei dauerhaft leerer Übersicht MQTT-Berechtigungen und Fermenter Control prüfen.'
+      : !live
       ? 'Verbindung unterbrochen – angezeigte Werte sind der letzte bekannte Stand.'
-      : hasDeviceRegistry?'Aktuelle Geräteliste aus Fermentor Control.':'Geräteliste aus Profilarchiv; für unabhängige Erkennung Fermentor Control aktualisieren.';
+      : 'Aktuelle Geräteliste aus Fermentor Control.';
     const grid=$('overview-grid');
     grid.innerHTML='';
     $('overview-empty').classList.toggle('hidden',devices.length>0);
@@ -1140,4 +1145,3 @@
   render();
   connect();
 })();
-
