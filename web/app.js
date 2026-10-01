@@ -8,13 +8,22 @@
   const OVERVIEW_TAB='__overview__';
   const ARCHIVE_TAB='__profile_archive__';
 
-  const TOPICS={
-    devices:'fermentorcontrol/devices',
-    globalAvailability:'fermentorcontrol/availability',
-    archiveState:'fermentorcontrol/profile-archive/state'
-  };
+  const DEFAULT_MQTT_BASE_TOPIC='fermentorcontrol';
+  const defaultConfig={broker:{host:'',username:'',password:''},topics:{baseTopic:DEFAULT_MQTT_BASE_TOPIC}};
 
-  const defaultConfig={broker:{host:'',username:'',password:''}};
+  function normalizeBaseTopic(value) {
+    if(value===undefined)return DEFAULT_MQTT_BASE_TOPIC;
+    if(typeof value!=='string')throw new Error('MQTT Basis-Topic muss eine Zeichenfolge sein.');
+    const base=value.trim().replace(/^\/+|\/+$/g,'');
+    if(!base||base.length>512||/[+#\u0000-\u001f\u007f]/.test(base)){
+      throw new Error('MQTT Basis-Topic ist leer oder enthält Wildcards bzw. Steuerzeichen.');
+    }
+    return base;
+  }
+
+  function mqttTopic(path) {
+    return `${config.topics.baseTopic}/${path}`;
+  }
 
   class MiniMqtt {
     constructor(callbacks={}) {
@@ -351,7 +360,7 @@
         host:normalizeBrokerHost(parsed.broker.host),
         username:String(parsed.broker.username??''),
         password:String(parsed.broker.password??'')
-      }};
+      },topics:{baseTopic:normalizeBaseTopic(parsed.topics?.baseTopic)}};
     }
 
     if(parsed?.broker?.url){
@@ -359,7 +368,7 @@
         host:normalizeBrokerHost(parsed.broker.url),
         username:String(parsed.broker.username??''),
         password:String(parsed.broker.password??'')
-      }};
+      },topics:{baseTopic:normalizeBaseTopic(parsed.topics?.baseTopic)}};
     }
 
     return null;
@@ -393,13 +402,16 @@
     if(!username)throw new Error('MQTT Benutzername fehlt.');
     if(!password)throw new Error('MQTT Passwort fehlt.');
 
-    return{broker:{host,username,password}};
+    if(candidate.topics!==undefined&&(!candidate.topics||typeof candidate.topics!=='object'||Array.isArray(candidate.topics))){
+      throw new Error('MQTT Topics-Konfiguration muss ein Objekt sein.');
+    }
+    return{broker:{host,username,password},topics:{baseTopic:normalizeBaseTopic(candidate.topics?.baseTopic)}};
   }
 
   function parseCredentialsDocument(document) {
     if(!document||document.format!=='riprapt-remote-credentials')throw new Error('Unbekanntes Credentials-Format.');
 
-    if(document.version===2)return validateBrokerConfig({broker:document.broker});
+    if(document.version===2)return validateBrokerConfig({broker:document.broker,topics:document.topics});
 
     if(document.version===1){
       const migrated=migrateLegacyConfig({broker:document.broker});
@@ -422,6 +434,15 @@
     $('broker-host').value=settingsDraft.broker.host;
     $('broker-user').value=settingsDraft.broker.username;
     $('broker-password').value=settingsDraft.broker.password;
+    $('mqtt-base-topic').value=settingsDraft.topics.baseTopic;
+    updateTopicPreview();
+  }
+
+  function updateTopicPreview() {
+    try{
+      const base=normalizeBaseTopic($('mqtt-base-topic').value);
+      $('mqtt-topic-preview').textContent=`${base}/devices · ${base}/availability · ${base}/profile-archive/state · ${base}/<ID>/state · ${base}/<ID>/command/...`;
+    }catch(error){$('mqtt-topic-preview').textContent=error.message;}
   }
 
   async function importCredentialsFile(file) {
@@ -495,7 +516,7 @@
   }
 
   function topicsForDevice(id) {
-    const root=`fermentorcontrol/${id}`;
+    const root=mqttTopic(id);
     return[
       `${root}/state`,
       `${root}/availability`,
@@ -571,7 +592,7 @@
   }
 
   function handleMessage(topic,payload) {
-    if(topic===TOPICS.devices){
+    if(topic===mqttTopic('devices')){
       const parsed=safeJson(payload);
       if(parsed?.schemaVersion!==1||!Array.isArray(parsed.devices)||
           parsed.devices.some(device=>!device||typeof device.id!=='string'||
@@ -584,14 +605,14 @@
       syncCurrentDevices(parsed.devices);
       return;
     }
-    if(topic===TOPICS.globalAvailability){
+    if(topic===mqttTopic('availability')){
       fermentControlOnline=payload==='online';
       updateBrokerPill();
       render();
       return;
     }
 
-    if(topic===TOPICS.archiveState){
+    if(topic===mqttTopic('profile-archive/state')){
       const parsed=safeJson(payload);
       if(!parsed||typeof parsed!=='object'){
         setError('Profilarchiv-State konnte nicht gelesen werden. External-MQTT-Recht "Profile anzeigen" prüfen.');
@@ -604,7 +625,9 @@
       return;
     }
 
-    const match=topic.match(/^fermentorcontrol\/([^/]+)\/(state|availability|profiles|command_result)$/);
+    const prefix=config.topics.baseTopic+'/';
+    if(!topic.startsWith(prefix))return;
+    const match=topic.slice(prefix.length).match(/^([^/]+)\/(state|availability|profiles|command_result)$/);
     if(!match)return;
 
     const id=match[1];
@@ -679,9 +702,9 @@
         setError('');
 
         try{
-          client.subscribe(TOPICS.globalAvailability);
-          client.subscribe(TOPICS.devices);
-          client.subscribe(TOPICS.archiveState);
+          client.subscribe(mqttTopic('availability'));
+          client.subscribe(mqttTopic('devices'));
+          client.subscribe(mqttTopic('profile-archive/state'));
         }catch(error){
           setError(String(error));
         }
@@ -724,7 +747,7 @@
     }
 
     client.publish(
-      `fermentorcontrol/${device.id}/command/${path}`,
+      mqttTopic(`${device.id}/command/${path}`),
       JSON.stringify({id:crypto.randomUUID(),...payload})
     );
   }
@@ -948,7 +971,7 @@
     const online=devices.filter(device=>device.online).length;
     $('overview-count').textContent=`${devices.length} Fermenter · ${live?online:0} online`;
     $('overview-note').textContent=!hasDeviceRegistry
-      ? 'Warte auf aktuelle Geräteliste (fermentorcontrol/devices). Bei dauerhaft leerer Übersicht MQTT-Berechtigungen und Fermenter Control prüfen.'
+      ? `Warte auf aktuelle Geräteliste (${mqttTopic('devices')}). Bei dauerhaft leerer Übersicht MQTT-Berechtigungen und Fermenter Control prüfen.`
       : !live
       ? 'Verbindung unterbrochen – angezeigte Werte sind der letzte bekannte Stand.'
       : 'Aktuelle Geräteliste aus Fermentor Control.';
@@ -1064,6 +1087,7 @@
   }
 
   $('open-settings').onclick=openSettings;
+  $('mqtt-base-topic').oninput=updateTopicPreview;
 
   $('close-settings').onclick=()=>{
     settingsDraft=null;
@@ -1090,6 +1114,7 @@
       settingsDraft.broker.host=$('broker-host').value.trim();
       settingsDraft.broker.username=$('broker-user').value;
       settingsDraft.broker.password=$('broker-password').value;
+      settingsDraft.topics.baseTopic=$('mqtt-base-topic').value;
 
       config=validateBrokerConfig(settingsDraft);
       settingsDraft=null;

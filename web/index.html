@@ -149,7 +149,10 @@
       </div>
       <p id="credentials-import-status" class="hint hidden" role="status"></p>
       <h3>Fermenter-Erkennung</h3>
-      <p class="hint">Alle Fermenter werden automatisch über FermentControl External MQTT erkannt. Die Geräteliste kommt aus <code>fermentorcontrol/devices</code>. Die App liest die zugehörigen <code>fermentorcontrol/&lt;ID&gt;/state</code> und sendet Befehle über <code>fermentorcontrol/&lt;ID&gt;/command/...</code>.</p>
+      <label>MQTT Basis-Topic<input id="mqtt-base-topic" placeholder="fermentercontrol" autocapitalize="none" autocomplete="off"></label>
+      <p class="hint">Den Basis-Topic aus der External-MQTT-Konfiguration von Fermenter Control übernehmen. Groß-/Kleinschreibung und Schreibweise müssen übereinstimmen.</p>
+      <p id="mqtt-topic-preview" class="hint"></p>
+      <p class="hint">Die aktuelle Geräteliste ist maßgeblich. Für diese Topics benötigt der MQTT-Benutzer passende Subscribe- und für Befehle Publish-Rechte.</p>
       <div class="modal-actions"><button id="reset-config" class="ghost danger">Lokale Konfiguration löschen</button><button id="save-settings">Speichern & verbinden</button></div>
     </div>
   </div>
@@ -158,4 +161,3 @@
   <script src="./auth.js"></script>
 </body>
 </html>
-

@@ -5,7 +5,7 @@ const vm = require('node:vm');
 
 function app() {
   class Element {
-    constructor() { this.children=[]; this.classes=new Set(); this.textContent=''; this.value='';
+    constructor() { this.children=[]; this.classes=new Set(); this.textContent=''; this.value=''; this.style={};
       this.classList={add:x=>this.classes.add(x),remove:x=>this.classes.delete(x),toggle:(x,on)=>on?this.classes.add(x):this.classes.delete(x)};
     }
     set innerHTML(value) { this.children=[]; }
@@ -16,10 +16,10 @@ function app() {
   }
   const elements=new Map(), storage=new Map();
   const element=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
-  const context={console,URL,structuredClone,document:{getElementById:element,querySelectorAll:()=>[],createElement:()=>new Element(),createElementNS:()=>new Element()},
+  const context={console,URL,structuredClone,crypto:{randomUUID:()=> 'test-command'},document:{getElementById:element,querySelectorAll:()=>[],createElement:()=>new Element(),createElementNS:()=>new Element()},
     localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)}};
   let source=fs.readFileSync('web/app.js','utf8');
-  source=source.replace('  render();\n  connect();\n})();', '  globalThis.api={handleMessage,snapshot:()=>({devices,states,selectedId}),online:()=>{brokerConnected=true;fermentControlOnline=true;render();}};\n  render();\n})();');
+  source=source.replace('  render();\n  connect();\n})();', '  globalThis.api={handleMessage,parseCredentialsDocument,validateBrokerConfig,topicsForDevice,publishExternal,setConfig:value=>{config=validateBrokerConfig(value);},setClient:value=>{client=value;},select:id=>{selectedId=id;},openSettings,snapshot:()=>({devices,states,selectedId}),online:()=>{brokerConnected=true;fermentControlOnline=true;render();}};\n  render();\n})();');
   vm.runInNewContext(source,context);
   return {api:context.api,element,storage};
 }
@@ -43,6 +43,43 @@ test('authoritative list removes stale devices, preserves history, and restores 
   registry([device]);
   assert.equal(api.snapshot().states.F01.history.length,1);
   assert.equal(element('overview-grid').children.length,1);
+});
+
+test('configured nested base topic routes registry, subscriptions, state, and commands',()=>{
+  const {api,element}=app();
+  const base='brewery.v2/fermentercontrol';
+  const config=api.parseCredentialsDocument({format:'riprapt-remote-credentials',version:2,
+    broker:{host:'example.hivemq.cloud',username:'test',password:'test'},topics:{baseTopic:' /'+base+'/ '}});
+  assert.equal(config.topics.baseTopic,base);
+  api.setConfig(config);
+  const subscribed=[],published=[];
+  api.setClient({connected:true,subscribe:t=>subscribed.push(t),unsubscribe:()=>{},publish:(...args)=>published.push(args)});
+  api.handleMessage(base+'/devices',JSON.stringify({schemaVersion:1,devices:[{id:'F01',online:true}]}));
+  assert.equal(element('overview-grid').children.length,1);
+  assert.deepEqual(subscribed,[base+'/F01/state',base+'/F01/availability',base+'/F01/profiles',base+'/F01/command_result']);
+  api.handleMessage(base+'/F01/state',JSON.stringify({temperature:{valid:true,beerC:18}}));
+  assert.equal(api.snapshot().states.F01.publicState.temperature.beerC,18);
+  api.handleMessage('fermentorcontrol/devices',JSON.stringify({schemaVersion:1,devices:[]}));
+  assert.equal(api.snapshot().devices.length,1);
+  api.select('F01');
+  api.publishExternal('setpoint',{value:19});
+  assert.equal(published[0][0],base+'/F01/command/setpoint');
+  assert.equal(JSON.parse(published[0][1]).value,19);
+  api.openSettings();
+  assert.equal(element('mqtt-base-topic').value,base);
+  assert.ok(element('mqtt-topic-preview').textContent.includes(base+'/devices'));
+});
+
+test('legacy credentials keep their topic; configured prefixes are normalized and validated',()=>{
+  const {api}=app();
+  const broker={host:'example.hivemq.cloud',username:'test',password:'test'};
+  assert.equal(api.parseCredentialsDocument({format:'riprapt-remote-credentials',version:2,broker}).topics.baseTopic,'fermentorcontrol');
+  assert.equal(api.parseCredentialsDocument({format:'riprapt-remote-credentials',version:1,broker:{url:'wss://example.hivemq.cloud:8884/mqtt',username:'test',password:'test'}}).topics.baseTopic,'fermentorcontrol');
+  assert.equal(api.validateBrokerConfig({broker,topics:{baseTopic:' /fermentercontrol/ '}}).topics.baseTopic,'fermentercontrol');
+  for(const baseTopic of ['', '/', 'test/+', 'test/#', 'test\u0000', 42]){
+    assert.throws(()=>api.validateBrokerConfig({broker,topics:{baseTopic}}));
+  }
+  assert.throws(()=>api.validateBrokerConfig({broker,topics:[]}));
 });
 
 test('archive targets never populate overview; malformed lists keep current devices',()=>{
